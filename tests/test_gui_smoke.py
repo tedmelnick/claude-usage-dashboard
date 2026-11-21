@@ -49,7 +49,7 @@ class FakeRoot(Widget):
 def fake_tk(monkeypatch, tmp_path):
     Widget.instances = []
     tk = types.ModuleType("tkinter")
-    for name in ("Frame", "Label", "Button", "Canvas", "Toplevel", "PhotoImage"):
+    for name in ("Frame", "Label", "Button", "Canvas", "Toplevel", "PhotoImage", "Text"):
         setattr(tk, name, type(name, (Widget,), {}))
     tk.Tk = FakeRoot
     tk.TclError = type("TclError", (Exception,), {})
@@ -135,3 +135,115 @@ def test_taskbar_icon_is_redrawn_from_usage(fake_tk):
     pump(root, 0)
     names = [c[0] for c in root.calls]
     assert "iconphoto" in names   # the live icon was set from the demo numbers
+
+
+# ---- version label and update button ----
+
+def settle(root, seconds=0.3):
+    """Wait for background threads, then let the window read its queue (and nothing else:
+    pump() also re-runs the timers, which would start another update check)."""
+    time.sleep(seconds)
+    for _ms, fn in list(root.after_calls):
+        if fn.__name__ == "poll":
+            fn()
+
+
+def labels():
+    return [w for w in Widget.instances if type(w).__name__ == "Label"]
+
+
+def label_with(text):
+    found = [w for w in labels() if w.kw.get("text") == text]
+    assert found, f"no label {text!r}: {[w.kw.get('text') for w in labels()]}"
+    return found[-1]
+
+
+def click_label(label):
+    for name, a, _k in label.calls:
+        if name == "bind" and a[0] == "<Button-1>" and len(a) > 1:
+            a[1](None)
+            return
+    raise AssertionError("label has no click handler")
+
+
+def test_version_label_and_check_shown(fake_tk):
+    from usage_dashboard import __version__
+    root = start()
+    pump(root)
+    pump(root, 0)
+    label_with("v" + __version__)
+    label_with("\u2713")   # up to date: the green check
+
+
+def test_update_pill_whats_new_and_skip(fake_tk, tmp_path):
+    import json
+    from usage_dashboard import gui
+    gui.run_gui(demo=True, demo_update=True)
+    root = [w for w in Widget.instances if isinstance(w, FakeRoot)][0]
+    pump(root)
+    settle(root)   # the first pump started the automatic check; this shows its answer
+    pill = label_with("\u2191 v2.3.0")
+    click_label(pill)                       # opens the What's new window
+    text_box = [w for w in Widget.instances if type(w).__name__ == "Text"][0]
+    shown = " ".join(str(a[1]) for n, a, _k in text_box.calls if n == "insert")
+    assert "v2.3.0" in shown and "v2.2.1" in shown and "made-up fix" in shown
+    assert "Update now" in buttons() and "Later" in buttons()
+    hidden_before = pill.calls.count(("pack_forget", (), {}))
+    buttons()["Skip this version"].command()
+    cfg = json.loads((tmp_path / "config.json").read_text())
+    assert cfg["skipped_version"] == "v2.3.0"
+    assert pill.calls.count(("pack_forget", (), {})) == hidden_before + 1   # the pill is hidden
+
+
+def test_update_now_in_preview_installs_nothing(fake_tk):
+    from usage_dashboard import gui
+    gui.run_gui(demo=True, demo_update=True)
+    root = [w for w in Widget.instances if isinstance(w, FakeRoot)][0]
+    pump(root)
+    settle(root)
+    click_label(label_with("\u2191 v2.3.0"))
+    buttons()["Update now"].command()
+    settle(root, 1.6)
+    assert any("preview" in str(w.kw.get("text", "")) for w in labels())
+    assert not root.calls or not any(c[0] == "destroy" for c in root.calls)   # no restart
+
+
+def test_clicking_the_version_checks_now(fake_tk, tmp_path, monkeypatch):
+    """Checks are off in config; clicking the version still checks, and shows the pill."""
+    from usage_dashboard import gui, updater
+    from usage_dashboard.api import UsageError
+    (tmp_path / "config.json").write_text('{"check_for_updates": false, "snapshots_enabled": false}')
+    monkeypatch.setattr(gui, "fetch_usage", lambda cfg: (_ for _ in ()).throw(UsageError("offline", "net")))
+    calls = []
+
+    def fake_check(current, etag=None, opener=None):
+        calls.append(current)
+        return [{"tag": "v9.0.0", "date": "2026-12-01", "notes": "big"}], "e1"
+
+    monkeypatch.setattr(updater, "check", fake_check)
+    root = start(demo=False)
+    pump(root)
+    pump(root, 0)
+    assert calls == []                      # no automatic check
+    from usage_dashboard import __version__
+    click_label(label_with("v" + __version__))
+    settle(root, 0.5)
+    assert calls == [__version__]
+    label_with("\u2191 v9.0.0")
+
+
+def test_automatic_check_and_failed_check(fake_tk, tmp_path, monkeypatch):
+    from usage_dashboard import gui, updater
+    from usage_dashboard.api import UsageError
+    (tmp_path / "config.json").write_text('{"snapshots_enabled": false}')
+    monkeypatch.setattr(gui, "fetch_usage", lambda cfg: (_ for _ in ()).throw(UsageError("offline", "net")))
+    monkeypatch.setattr(updater, "check", lambda *a, **k: (_ for _ in ()).throw(updater.UpdateError("no")))
+    root = start(demo=False)
+    pump(root)
+    settle(root)
+    # a failed automatic check shows nothing new, and the window keeps working
+    assert not any(str(w.kw.get("text", "")).startswith("\u2191") for w in labels())
+    from usage_dashboard import __version__
+    click_label(label_with("v" + __version__))
+    settle(root, 0.5)
+    label_with("Couldn't check")

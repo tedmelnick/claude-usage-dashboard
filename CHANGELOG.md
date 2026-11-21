@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.0
+Features
+- The window shows which version you're running, next to the title (full and compact views).
+- A small green check after the version means you're up to date. Click the version to check GitHub right away.
+- When a newer release is published, the check turns into a blue pill (for example "↑ v2.3.0"). Click it to read the release notes for every version you're behind, then choose Update now, Later or Skip this version.
+- Update now downloads that release from GitHub, keeps your settings and history, backs up the files it replaces (in `_backup_before_update`), and restarts the dashboard. If anything goes wrong it puts the old files back. A copy that is a git clone is never overwritten; update it with `git pull`.
+- The app looks for updates when it starts and every 6 hours. Turn that off with `check_for_updates` set to `false`; clicking the version still checks.
+- `python claude_usage_dashboard.py --demo-update` previews the update pill and window with made-up releases and installs nothing.
+
+Fixes
+- The version number inside the app was still 2.0.0 in releases 2.0.1 and 2.1.0. A test now keeps it in step with this file.
+
 ## 2.1.0
 Features
 - New app icon for the desktop shortcut and the window: a countdown ring around three gauge bars.

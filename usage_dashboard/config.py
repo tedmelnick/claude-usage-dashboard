@@ -60,6 +60,10 @@ DEFAULT_CONFIG = {
     # button shows a progress strip for whichever limit is more urgent (Windows).
     "dynamic_icon": True,
     "taskbar_progress": True,
+    # Updates: look for a newer GitHub release at start and every few hours, and show a
+    # button when one exists. Nothing is installed without you pressing Update now.
+    "check_for_updates": True,
+    "skipped_version": "",
 }
 
 

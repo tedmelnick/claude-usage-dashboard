@@ -26,6 +26,7 @@ Double-click the desktop shortcut or `Start Claude Usage.bat`. Or run `pythonw c
 - **Top projects**: which project folders used the most Claude Code tokens in that period.
 - **Weekly peak**: the highest all-models percentage reached in each of the last weeks, so you can compare this week with earlier ones. It starts empty and fills in as the app runs.
 - **Cost estimate** (optional): totals and per-project dollars once you fill in `prices_per_mtok`. See `prices.example.json`.
+- **Version and updates**: the version you're running sits next to the title, with a green check when you're up to date. See [Updates](#updates).
 - Buttons: Open folder, On top, Refresh, View (Full / Compact), Theme (dark / light), Window (Solid, See-through, No background), Clock (12 hr / 24 hr).
 
 Updates every 60 seconds. If an update fails, or 5 minutes pass with no success, the status dot turns amber and a banner explains why and when the next try is.
@@ -41,6 +42,18 @@ The dashboard sends a desktop notification, and shows a strip at the top of the 
 
 Each alert fires once. The first reading after you start the app is only a baseline, so opening it at 85% doesn't announce 80%. Run `Test alert.bat` to check that notifications reach you. If they don't, Windows Focus Assist / Do Not Disturb may be hiding them; the strip in the window still shows. Set `alerts_enabled` to `false` to turn all of this off, or `alert_sound` to `true` to add the system sound on Windows.
 
+## Updates
+The version you're running (for example `v2.2.0`) is shown next to the title, in both the full and compact views.
+
+- A small **green check** after it means you're on the latest release. **Click the version** to check GitHub right away.
+- When a newer release is published, the check turns into a blue pill such as `↑ v2.3.0`. Click it to read the release notes for every version you're behind.
+- Then choose **Update now**, **Later**, or **Skip this version** (clicking the version again brings a skipped update back).
+- **Update now** downloads that release from GitHub, replaces the app's files, keeps your `config.json` and `usage_history.db`, and restarts the dashboard. The files it replaced are saved in `_backup_before_update\v<old version>`, and if anything fails they are put back. Nothing is ever installed without you pressing the button.
+- The app checks when it starts and every 6 hours. Set `check_for_updates` to `false` to turn that off (clicking the version still checks).
+- If the folder is a git clone (it has a `.git` folder), the app only tells you about updates; use `git pull` to install them.
+- Updates come from published GitHub releases, not from every commit. Pre-releases and drafts are ignored.
+- `Preview update.bat` (or `python claude_usage_dashboard.py --demo-update`) shows the pill and the What's new window with made-up releases, and installs nothing.
+
 ## Icons and the taskbar
 - The desktop shortcut and the window use the icon in `assets/` (a countdown ring around three gauge bars). Run `Setup.bat` again to give an existing shortcut the new icon.
 - **Live taskbar icon (Windows):** while the dashboard runs, its taskbar icon is redrawn on each update as two bars, current session on top and weekly (all models) below. A bar is blue normally, amber when it is getting warm (70% used, or on pace to finish above 90%) and red when it is urgent (90% used, or on pace to run out before the reset). An urgent bar also gets a small spark at its tip.
@@ -51,10 +64,12 @@ Each alert fires once. The first reading after you start the app is only a basel
 - `Setup.bat`: one-time setup (Python check, Claude Code check, desktop shortcut).
 - `assets/`: the app icon (`icon.ico`, `icon.png`, and the SVG sources).
 - `Preview (demo).bat`: runs with fake data. `python claude_usage_dashboard.py --demo --stale` previews the stale warning.
+- `Preview update.bat`: previews the update button with made-up releases.
 - `Debug dump.bat`: writes the raw reply to `dump.json`. Use it if bars are missing or wrong.
 - `Test alert.bat`: sends a test notification.
 - `config.json`: created on first close. See below.
 - `usage_history.db`: the saved limit readings behind the weekly peak chart. Safe to delete; the chart then starts over.
+- `_backup_before_update/`: the files the last update replaced. Safe to delete once the new version works.
 - `prices.example.json`: example `prices_per_mtok` values.
 - `run.sh`: start script for macOS and Linux.
 - `usage_dashboard/`: the code. `claude_usage_dashboard.py` just starts it.
@@ -76,13 +91,16 @@ Close the dashboard before editing, because closing it re-saves the settings.
 | `snapshot_keep_days` | 365 | Readings older than this are deleted |
 | `compact` | `false` | Compact view |
 | `dynamic_icon`, `taskbar_progress` | `true` | Live taskbar icon and taskbar progress strip (see Icons and the taskbar) |
+| `check_for_updates` | `true` | Look for a newer GitHub release at start and every 6 hours (see Updates) |
+| `skipped_version` | `""` | The release you chose Skip this version for |
 | `alerts_enabled`, `alert_thresholds`, `alert_on_runout`, `alert_on_reset`, `alert_reset_min_pct`, `alert_sound` | see above | Alerts |
 | `prices_per_mtok` | `{}` | Dollars per million tokens by model family, for the cost estimate |
 | `open_folder` | your home folder | What the Open folder button opens |
 | `theme`, `window_mode`, `glass_alpha`, `clock_24h`, `always_on_top`, `show_zero_sources` | | Look and layout |
 
 ## Privacy and safety
-- The dashboard talks only to Anthropic's own usage endpoint (`api.anthropic.com`) and, if you turn on `auto_refresh_token`, Anthropic's token endpoint. Nothing is sent anywhere else.
+- The dashboard talks to Anthropic's own usage endpoint (`api.anthropic.com`), Anthropic's token endpoint if you turn on `auto_refresh_token`, and GitHub (`api.github.com`, `github.com`) to look for and download updates. The GitHub requests carry only the app name and version and no personal data. Turn the automatic check off with `check_for_updates`. Nothing else is sent anywhere.
+- Update now downloads the release's source zip from `github.com`, refuses anything that isn't from GitHub or doesn't look like this app, and only ever writes inside the app's own folder. It trusts whatever is in the repository's published releases, the same as downloading one by hand.
 - It reads Claude Code's `~/.claude/.credentials.json` and local logs on your PC. Never post that file anywhere.
 - `usage_history.db` holds only percentages and reset times. Project names shown in "Top projects" come from your local Claude Code logs and are never sent anywhere.
 - To find your Claude Code version for the user agent, it runs `claude --version` on your PC.
@@ -112,7 +130,7 @@ The dashboard is built on Windows, and the macOS and Linux paths have only been 
 python -m pip install pytest
 python -m pytest
 ```
-The tests cover the parsing and projection maths, history scanning, alerts, backoff, the API error handling, and a smoke test that runs the whole window against a stand-in for tkinter. GitHub Actions runs them on Windows and Linux for every push.
+The tests cover the parsing and projection maths, history scanning, alerts, backoff, the API error handling, the update check and installer (against a stand-in for GitHub, including a failed install rolling back), and a smoke test that runs the whole window against a stand-in for tkinter. GitHub Actions runs them on Windows and Linux for every push.
 
 ## License
 MIT. See `LICENSE`.

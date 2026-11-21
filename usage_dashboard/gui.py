@@ -11,11 +11,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import __version__
 from . import demo as demo_data
-from . import status_icon, taskbar
+from . import status_icon, taskbar, updater
 from .alerts import AlertTracker, notify
 from .api import UsageError, fetch_usage
-from .config import DUMP_PATH, HISTORY_DAY_CHOICES, HISTORY_DB_PATH, load_config, save_config
+from .config import (APP_DIR, DUMP_PATH, HISTORY_DAY_CHOICES, HISTORY_DB_PATH, load_config,
+                     save_config)
 from .core import (fmt_secs, fmt_tokens, next_delay, parse_breakdown, parse_limits,
                    project, reply_problem, sub_text, verdict_text)
 from .history import (SnapshotStore, history_cost, history_dirs, history_tokens, scan_history,
@@ -37,6 +39,7 @@ GREEN, GREEN_D = "#639922", "#173404"
 TEAL = "#1D9E75"
 BTN_BORDER = "#55544f"
 BANNER_FG, BANNER_BG = "#FAC775", "#412402"
+PILL = ("#ffffff", "#2a63b0")   # (text, background) of the "update available" pill
 CHIP = {"ok": ("#C0DD97", "#173404"), "warn": ("#FAC775", "#412402"),
         "over": ("#F7C1C1", "#501313")}
 
@@ -46,6 +49,7 @@ PALETTES = {
         "TEXT": "#ececea", "TEXT2": "#b8b7b0", "MUTED": "#9a9992",
         "BLUE_D": "#0C447C", "RED_D": "#501313", "AMBER_D": "#412402", "GREEN_D": "#173404",
         "BTN_BORDER": "#55544f", "BANNER_FG": "#FAC775", "BANNER_BG": "#412402",
+        "PILL": ("#ffffff", "#2a63b0"),
         "CHIP": {"ok": ("#C0DD97", "#173404"), "warn": ("#FAC775", "#412402"),
                  "over": ("#F7C1C1", "#501313")},
     },
@@ -54,6 +58,7 @@ PALETTES = {
         "TEXT": "#1f1f1d", "TEXT2": "#4a4944", "MUTED": "#6b6a63",
         "BLUE_D": "#B5D4F4", "RED_D": "#F7C1C1", "AMBER_D": "#FAC775", "GREEN_D": "#C0DD97",
         "BTN_BORDER": "#b5b4ac", "BANNER_FG": "#633806", "BANNER_BG": "#FAEEDA",
+        "PILL": ("#0C447C", "#B5D4F4"),
         "CHIP": {"ok": ("#27500A", "#EAF3DE"), "warn": ("#633806", "#FAEEDA"),
                  "over": ("#791F1F", "#FCEBEB")},
     },
@@ -116,7 +121,7 @@ def trend_summary(peaks):
     return f"This week {cur['peak']:.0f}%, {word} last week's {prev['peak']:.0f}%{gap}"
 
 
-def run_gui(demo=False, dump=False, stale=False):
+def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
     import tkinter as tk
     from tkinter import font as tkfont
 
@@ -130,7 +135,10 @@ def run_gui(demo=False, dump=False, stale=False):
     wake = threading.Event()
     state = {"usage": None, "history": None, "trend": None, "last_ok": None, "last_err": None,
              "started": time.time(), "force_at": 0.0, "retry_at": None,
-             "alert": None, "alert_until": 0.0}
+             "alert": None, "alert_until": 0.0,
+             "update": {"status": "unknown", "checking": False, "latest": None,
+                        "releases": [], "etag": None},
+             "upd_msg": ("", 0.0, ""), "ind_key": "unset", "pill": False, "restart": False}
     cache = {}
 
     # ---- worker thread ----
@@ -248,6 +256,9 @@ def run_gui(demo=False, dump=False, stale=False):
     head.pack(fill="x")
     lbl_title = tk.Label(head, text="Claude usage", font=f_title, fg=TEXT, bg=BG)
     lbl_title.pack(side="left")
+    lbl_ver = tk.Label(head, text="v" + __version__, font=f_small, fg=MUTED, bg=BG, cursor="hand2")
+    lbl_ver.pack(side="left", padx=(8, 0), pady=(2, 0))
+    lbl_ind = tk.Label(head, text="", font=f_small, fg=MUTED, bg=BG, cursor="hand2")
 
     def mkbtn(parent, text, cmd):
         b = tk.Button(parent, text=text, command=cmd, font=f_small, fg=TEXT, bg=BG,
@@ -599,6 +610,9 @@ def run_gui(demo=False, dump=False, stale=False):
         for w in (outer, head, status, body, hist_frame, trend_frame):
             w.configure(bg=BG)
         lbl_title.configure(fg=TEXT, bg=BG)
+        lbl_ver.configure(fg=MUTED, bg=BG)
+        state["ind_key"] = "unset"   # colours changed: redraw the check or pill
+        refresh_indicator()
         dot.configure(bg=BG)
         lbl_upd.configure(bg=BG, fg=MUTED)
         banner.configure(fg=BANNER_FG, bg=BANNER_BG)
@@ -719,6 +733,246 @@ def run_gui(demo=False, dump=False, stale=False):
 
     alert_bar.bind("<Button-1>", dismiss_alert)
 
+    # ---- updates ----
+    def vlabel(tag):
+        tag = str(tag or "")
+        return tag if tag.startswith("v") else "v" + tag
+
+    def attach_tip(widget, get_text):
+        """A small hover tip under a widget."""
+        tip = {"w": None, "job": None}
+
+        def show():
+            tip["job"] = None
+            text = get_text()
+            if not text:
+                return
+            w = tk.Toplevel(root)
+            w.overrideredirect(True)
+            w.attributes("-topmost", True)
+            w.geometry(f"+{widget.winfo_rootx()}+{widget.winfo_rooty() + widget.winfo_height() + 4}")
+            tk.Label(w, text=text, font=f_small, fg=TEXT, bg=PANEL, padx=8, pady=4,
+                     highlightthickness=1, highlightbackground=BORDER).pack()
+            tip["w"] = w
+
+        def enter(_e):
+            tip["job"] = root.after(500, show)
+
+        def leave(_e):
+            if tip["job"] is not None:
+                root.after_cancel(tip["job"])
+                tip["job"] = None
+            if tip["w"] is not None:
+                tip["w"].destroy()
+                tip["w"] = None
+
+        widget.bind("<Enter>", enter, add="+")
+        widget.bind("<Leave>", leave, add="+")
+        widget.bind("<ButtonPress-1>", leave, add="+")
+
+    def pending_update():
+        """The newest release to offer, or None (nothing newer, or you skipped it)."""
+        latest = state["update"]["latest"]
+        return latest if latest and latest != cfg.get("skipped_version") else None
+
+    def refresh_indicator():
+        """What sits right after the version: a green check, 'Checking…', or the update pill."""
+        u = state["update"]
+        msg, until, kind = state["upd_msg"]
+        if u["checking"]:
+            key = ("Checking\u2026", MUTED, BG, False)
+        elif msg and time.time() < until:
+            key = (msg, GREEN if kind == "ok" else MUTED, BG, False)
+        elif pending_update():
+            key = ("\u2191 " + vlabel(pending_update()), PILL[0], PILL[1], True)
+        elif u["status"] == "current":
+            key = ("\u2713", GREEN, BG, False)
+        else:
+            key = None
+        state["pill"] = bool(key and key[3])
+        if key == state["ind_key"]:
+            return
+        state["ind_key"] = key
+        lbl_ind.pack_forget()
+        if key is None:
+            return
+        text, fg, bg, is_pill = key
+        lbl_ind.config(text=text, fg=fg, bg=bg, padx=7 if is_pill else 0, pady=1 if is_pill else 0)
+        lbl_ind.pack(in_=head, side="left", padx=(8 if is_pill else 6, 0), pady=(2, 0), after=lbl_ver)
+
+    def run_check(manual=False):
+        u = state["update"]
+        if u["checking"]:
+            return
+        u["checking"] = True
+        refresh_indicator()
+
+        def job():
+            try:
+                if demo_update:
+                    time.sleep(0.8 if manual else 0)
+                    q.put(("update", ("ok", demo_data.demo_releases(), None, manual)))
+                elif demo:   # a preview never touches the network
+                    q.put(("update", ("ok", [], None, manual)))
+                else:
+                    newer, etag = updater.check(__version__, u["etag"])
+                    q.put(("update", ("ok", newer, etag, manual)))
+            except updater.UpdateError as e:
+                q.put(("update", ("error", str(e), None, manual)))
+            except Exception:
+                q.put(("update", ("error", "Couldn't check for updates.", None, manual)))
+
+        threading.Thread(target=job, daemon=True).start()
+
+    def got_check(result):
+        status, a, b, manual = result
+        u = state["update"]
+        u["checking"] = False
+        if status == "ok":
+            newer, etag = a, b
+            if etag:
+                u["etag"] = etag
+            if newer is not None:
+                u["releases"] = newer
+                u["latest"] = newer[0]["tag"] if newer else None
+            u["status"] = "available" if u["latest"] else "current"
+            if manual:
+                if u["latest"] and u["latest"] == cfg.get("skipped_version"):
+                    cfg["skipped_version"] = ""   # asking again brings a skipped update back
+                    save_config(cfg)
+                if not u["latest"]:
+                    state["upd_msg"] = ("\u2713 Up to date", time.time() + 4, "ok")
+        elif manual:
+            state["upd_msg"] = ("Couldn't check", time.time() + 4, "err")
+        refresh_indicator()
+
+    def auto_check():
+        if demo and not demo_update:
+            state["update"]["status"] = "current"   # a preview never touches the network
+            refresh_indicator()
+        elif demo_update or cfg.get("check_for_updates", True):
+            run_check(False)
+        root.after(updater.CHECK_EVERY_SECONDS * 1000, auto_check)
+
+    def on_indicator_click(_e=None):
+        if state["pill"]:
+            open_whats_new()
+        else:
+            run_check(True)
+
+    lbl_ver.bind("<Button-1>", lambda e: run_check(True))
+    lbl_ind.bind("<Button-1>", on_indicator_click)
+    attach_tip(lbl_ver, lambda: "Click to check for updates")
+    attach_tip(lbl_ind, lambda: (f"{vlabel(pending_update())} is available. Click to see what's new"
+                                 if state["pill"] else "You're up to date. Click to check again"))
+
+    dlg = {"w": None}
+
+    def close_dialog():
+        if dlg["w"] is not None:
+            try:
+                dlg["w"].destroy()
+            except tk.TclError:
+                pass
+            dlg["w"] = None
+
+    def open_whats_new():
+        u = state["update"]
+        latest = pending_update()
+        if not latest or not u["releases"]:
+            return
+        if dlg["w"] is not None:
+            try:
+                dlg["w"].lift()
+            except tk.TclError:
+                pass
+            return
+        win = tk.Toplevel(root)
+        dlg["w"] = win
+        win.title("What's new")
+        win.configure(bg=BG)
+        win.transient(root)
+        win.geometry(f"+{root.winfo_x() + 30}+{root.winfo_y() + 40}")
+        win.protocol("WM_DELETE_WINDOW", close_dialog)
+        wrap = tk.Frame(win, bg=BG, padx=16, pady=14)
+        wrap.pack(fill="both", expand=True)
+        tk.Label(wrap, text="What's new", font=f_title, fg=TEXT, bg=BG).pack(anchor="w")
+        tk.Label(wrap, text=f"You have v{__version__}. The latest is {vlabel(latest)}.",
+                 font=f_small, fg=MUTED, bg=BG).pack(anchor="w", pady=(2, 10))
+        box = tk.Text(wrap, width=58, height=16, wrap="word", bg=PANEL, fg=TEXT2, relief="flat",
+                      bd=0, padx=10, pady=8, font=f_small, highlightthickness=1,
+                      highlightbackground=BORDER, cursor="arrow")
+        box.tag_configure("h", font=f_bold, foreground=TEXT)
+        box.tag_configure("d", foreground=MUTED)
+        for r in u["releases"]:
+            box.insert("end", vlabel(r["tag"]), "h")
+            box.insert("end", ("   " + r["date"] if r["date"] else "") + "\n", "d")
+            box.insert("end", (r["notes"] or "No notes for this release.") + "\n\n")
+        box.config(state="disabled")
+        box.pack(fill="both", expand=True)
+        msg = tk.Label(wrap, text="", font=f_small, fg=MUTED, bg=BG, justify="left", anchor="w",
+                       wraplength=420)
+        msg.pack(fill="x", pady=(8, 0))
+        row = tk.Frame(wrap, bg=BG)
+        row.pack(fill="x", pady=(8, 0))
+        git_clone = updater.is_git_clone(APP_DIR)
+        btns = []
+
+        def skip():
+            cfg["skipped_version"] = latest
+            save_config(cfg)
+            close_dialog()
+            refresh_indicator()
+
+        def do_update():
+            for b in btns:
+                b.config(state="disabled")
+            msg.config(text="Downloading and installing\u2026", fg=MUTED)
+            state["upd_dlg_msg"] = msg
+            state["upd_btns"] = btns
+
+            def job():
+                try:
+                    if demo_update:
+                        time.sleep(1.0)
+                        raise updater.UpdateError("This is a preview, so nothing was installed.")
+                    updater.update_to(latest, APP_DIR)
+                    q.put(("update_done", (latest, None)))
+                except updater.UpdateError as e:
+                    q.put(("update_done", (latest, str(e))))
+                except Exception as e:
+                    q.put(("update_done", (latest, f"Update failed ({e}). Nothing was changed.")))
+
+            threading.Thread(target=job, daemon=True).start()
+
+        if git_clone:
+            msg.config(text="This folder is a git clone, so update it with git pull.")
+        else:
+            now_btn = mkbtn(row, "Update now", do_update)
+            now_btn.config(fg=PILL[0], bg=PILL[1], activebackground=PILL[1], activeforeground=PILL[0],
+                           highlightbackground=PILL[1])
+            now_btn.pack(side="right")
+            btns.append(now_btn)
+        later = mkbtn(row, "Later", close_dialog)
+        later.pack(side="right", padx=(0, 6))
+        skip_btn = mkbtn(row, "Skip this version", skip)
+        skip_btn.pack(side="right", padx=(0, 6))
+        btns.extend([later, skip_btn])
+
+    def got_update_done(result):
+        tag, err = result
+        msg, btns = state.get("upd_dlg_msg"), state.get("upd_btns") or []
+        if err:
+            if msg is not None and dlg["w"] is not None:
+                msg.config(text=err, fg=CHIP["over"][0])
+            for b in btns:
+                b.config(state="normal")
+            return
+        if msg is not None and dlg["w"] is not None:
+            msg.config(text=f"Updated to {vlabel(tag)}. Restarting\u2026", fg=MUTED)
+        state["restart"] = True
+        root.after(900, on_close)
+
     # ---- ui loop ----
     blink = {"on": False}
 
@@ -757,6 +1011,7 @@ def run_gui(demo=False, dump=False, stale=False):
                 banner.pack_forget()
         if state["alert"] and time.time() > state["alert_until"]:
             dismiss_alert()
+        refresh_indicator()
         root.after(1000, tick_status)
 
     def toplevel_hwnd():
@@ -807,6 +1062,10 @@ def run_gui(demo=False, dump=False, stale=False):
                     state["last_err"] = str(payload)
                 elif kind == "retry":
                     state["retry_at"] = payload
+                elif kind == "update":
+                    got_check(payload)
+                elif kind == "update_done":
+                    got_update_done(payload)
                 elif kind == "alert":
                     state["alert"] = payload
                     state["alert_until"] = time.time() + 15 * 60
@@ -840,4 +1099,7 @@ def run_gui(demo=False, dump=False, stale=False):
     root.after(300, poll)
     root.after(1000, tick_status)
     root.after(30_000, redraw_countdowns)
+    root.after(3000, auto_check)
     root.mainloop()
+    if state["restart"]:   # an update was installed: start the new version
+        updater.relaunch(APP_DIR, [a for a in (argv or []) if a != "--demo-update"])

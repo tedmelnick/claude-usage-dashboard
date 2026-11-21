@@ -1,4 +1,4 @@
-"""Command line: python claude_usage_dashboard.py [--demo] [--stale] [--dump] [--test-alert]."""
+"""Command line: python claude_usage_dashboard.py [--demo] [--demo-update] [--stale] [--dump] [--test-alert]."""
 import sys
 
 from . import __version__
@@ -15,4 +15,6 @@ def main(argv=None):
         print("Test notification sent." if ok else "Couldn't start a notification on this system.")
         return
     from .gui import run_gui
-    run_gui(demo="--demo" in argv, dump="--dump" in argv, stale="--stale" in argv)
+    demo_update = "--demo-update" in argv   # fake demo data plus a pretend newer release
+    run_gui(demo="--demo" in argv or demo_update, dump="--dump" in argv, stale="--stale" in argv,
+            demo_update=demo_update, argv=argv)
