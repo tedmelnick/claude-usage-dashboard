@@ -62,6 +62,9 @@ def fake_tk(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "tkinter.font", font)
     from usage_dashboard import config
     monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "config.json")
+    # CI checks the code out as a git clone, which the updater never overwrites
+    from usage_dashboard import updater
+    monkeypatch.setattr(updater, "is_git_clone", lambda *_a, **_k: False)
     return tk
 
 
