@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Usage Dashboard: interactive demo</title>
+<meta name="description" content="Interactive web demo of the Claude Usage Dashboard, a Windows desktop app. Made-up data.">
+<meta name="theme-color" content="#1c1c1b">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect x='8' y='8' width='240' height='240' rx='52' fill='%23222'/%3E%3Ccircle cx='128' cy='128' r='78' fill='none' stroke='%23D97757' stroke-width='36' stroke-dasharray='326 490' transform='rotate(-90 128 128)'/%3E%3C/svg%3E">
+<style>
+:root{--blue:#378ADD;--red:#E24B4A;--amber:#EF9F27;--green:#639922;--teal:#1D9E75;
+  --fable:#D4537E;--mythos:#7F77DD;--other:#888780;
+  --face:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Roboto,"Noto Sans",sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:var(--face);background:#0f0f0e;color:#ddd;min-height:100vh;-webkit-text-size-adjust:100%}
+body.light{background:#e6e5df;color:#333}
+a{color:inherit}
+
+/* ---- themes (values copied from the app's PALETTES) ---- */
+[data-theme=dark]{--bg:#1c1c1b;--panel:#242423;--track:#2c2c2a;--border:#3a3a38;--text:#ececea;--text2:#b8b7b0;--muted:#9a9992;
+  --blue-d:#0C447C;--red-d:#501313;--amber-d:#412402;--green-d:#173404;--btn:#55544f;--banner-fg:#FAC775;--banner-bg:#412402;
+  --pill-fg:#fff;--pill-bg:#2a63b0;--ok-fg:#C0DD97;--ok-bg:#173404;--warn-fg:#FAC775;--warn-bg:#412402;--over-fg:#F7C1C1;--over-bg:#501313;
+  --link:#4a9eff;--tb:#202020;--tbtext:#ececea;--stale-dot:#BA7517;
+  --wall:linear-gradient(135deg,#16284f 0%,#27427d 38%,#5b3a85 70%,#8a2c3c 100%)}
+[data-theme=light]{--bg:#f6f5f1;--panel:#ffffff;--track:#e4e3dc;--border:#d3d2ca;--text:#1f1f1d;--text2:#4a4944;--muted:#6b6a63;
+  --blue-d:#B5D4F4;--red-d:#F7C1C1;--amber-d:#FAC775;--green-d:#C0DD97;--btn:#b5b4ac;--banner-fg:#633806;--banner-bg:#FAEEDA;
+  --pill-fg:#0C447C;--pill-bg:#B5D4F4;--ok-fg:#27500A;--ok-bg:#EAF3DE;--warn-fg:#633806;--warn-bg:#FAEEDA;--over-fg:#791F1F;--over-bg:#FCEBEB;
+  --link:#1a5fb4;--tb:#f3f3f3;--tbtext:#333;--stale-dot:#BA7517;
+  --wall:linear-gradient(135deg,#bcd8f5 0%,#d9d3f3 45%,#f6dcd0 100%)}
+
+/* ---- page chrome (outside the app window) ---- */
+.top{max-width:640px;margin:0 auto;padding:14px 16px 4px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;justify-content:space-between}
+.top h1{font-size:15px;margin:0;font-weight:600}
+.top .lede{font-size:12.5px;opacity:.75}
+.top a.gh{font-size:13px;text-decoration:none;border:1px solid currentColor;border-radius:6px;padding:3px 10px;opacity:.9}
+.top a.gh:hover{opacity:1}
+.stage{position:relative;max-width:640px;margin:8px auto 0;padding:26px 14px 30px;border-radius:14px;background:var(--wall);display:flex;justify-content:center;align-items:flex-start}
+@media(max-width:600px){.stage{border-radius:0;margin-top:6px;padding:16px 8px 24px}}
+
+/* ---- the app window ---- */
+.win{width:100%;max-width:540px;background:var(--bg);color:var(--text);border-radius:9px;overflow:hidden;
+  box-shadow:0 18px 50px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.07);font-size:13.5px;line-height:1.3}
+.win[data-mode=glass]{opacity:.82}
+.win[data-mode=none]{background:transparent;box-shadow:none;border-radius:0;overflow:visible;text-shadow:0 0 5px rgba(0,0,0,.0)}
+.stage[data-theme=light] .win[data-mode=none]{text-shadow:0 0 6px rgba(255,255,255,.6)}
+.stage[data-theme=dark] .win[data-mode=none]{text-shadow:0 0 6px rgba(0,0,0,.7)}
+.tbar{display:flex;align-items:center;height:34px;background:var(--tb);color:var(--tbtext);font-size:12.5px;padding-left:10px;user-select:none}
+.tbar .ic{width:15px;height:15px;margin-right:9px;flex:none}
+.tbar .tt{flex:1}
+.tbar button{all:unset;width:44px;height:34px;display:flex;align-items:center;justify-content:center;cursor:default;font-size:13px;opacity:.85}
+.tbar button:hover{background:rgba(128,128,128,.25)}
+.tbar button.x:hover{background:#c42b1c;color:#fff;opacity:1}
+.win[data-mode=none] .tbar{display:none}
+.inner{padding:14px 16px 16px}
+.win[data-mode=none] .inner{padding-top:4px}
+
+.head,.statusrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 6px}
+.hl{display:flex;align-items:baseline;flex-wrap:wrap}
+.hr,.sr{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.statusrow{margin:4px 0 10px}
+.title{font-size:16.5px;font-weight:700;color:var(--text)}
+.ver{font-size:12px;color:var(--muted);margin-left:8px;cursor:pointer;position:relative;top:-1px}
+.ver:hover{text-decoration:underline}
+.ind{font-size:12px;margin-left:6px;cursor:pointer;position:relative;top:-1px}
+.ind.green{color:var(--green)}.ind.muted{color:var(--muted)}
+.ind.pill{background:var(--pill-bg);color:var(--pill-fg);padding:1px 7px;border-radius:2px;margin-left:8px}
+.btn{font:inherit;font-size:12px;color:var(--text);background:var(--bg);border:1px solid var(--btn);padding:3px 8px;cursor:pointer;border-radius:0;line-height:1.3}
+.btn:hover{background:var(--track)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.pillbtn{background:var(--pill-bg);color:var(--pill-fg);border-color:var(--pill-bg)}
+.dotwrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex:none}
+.dot.stale{background:var(--amber);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{background:var(--amber-d)}}
+.banner,.alertbar{font-size:12px;padding:8px 10px;margin-bottom:10px;text-align:left}
+.banner{color:var(--banner-fg);background:var(--banner-bg)}
+.alertbar{cursor:pointer}
+.k-ok{color:var(--ok-fg);background:var(--ok-bg)}.k-warn{color:var(--warn-fg);background:var(--warn-bg)}.k-over{color:var(--over-fg);background:var(--over-bg)}
+.k-none{color:var(--muted);background:var(--track)}
+
+.block{margin-bottom:14px}.block.small{margin-bottom:10px}.compact .block{margin-bottom:8px}
+.brow{display:flex;justify-content:space-between;align-items:baseline}
+.brow .l{color:var(--text2)}.brow .v{font-weight:700;color:var(--text)}
+.bar{position:relative;height:10px;background:var(--track);margin-top:5px;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;display:block}
+.sub{font-size:12px;color:var(--muted);margin-top:4px}
+.chip{display:inline-block;font-size:12px;padding:2px 8px;margin-top:5px}
+.sepl{height:1px;background:var(--border);margin:2px 0 10px}
+.sepl.a{margin:4px 0 12px}.sepl.b{margin:12px 0}
+.hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px;color:var(--muted);gap:8px}
+.grid{display:grid;grid-template-columns:auto 1fr auto;align-items:center;column-gap:8px;row-gap:6px;margin-bottom:10px}
+.grid .n{font-size:12px;color:var(--text2);white-space:nowrap}
+.grid .p{font-size:12px;font-weight:700;color:var(--text);text-align:right;min-width:34px}
+.grid .tv{font-size:12px;color:var(--text);text-align:right;white-space:nowrap}
+.grid .bar{margin-top:0}
+.srcgrid .n{min-width:92px}.projgrid .n{min-width:118px}
+.hrow{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hrow .l{color:var(--text2)}.hrow .r{display:flex;align-items:center;gap:8px}.hrow .tot{font-weight:700;color:var(--text)}
+.chart{display:flex;align-items:flex-end;height:62px;margin-top:10px}
+.chart .col{flex:1;display:flex;justify-content:center;align-items:flex-end;height:100%}
+.chart .stack{display:flex;flex-direction:column-reverse}
+.axis{display:flex;height:22px;align-items:flex-end}
+.axis span{flex:1;text-align:center;font-size:12px;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-size:12px;color:var(--text2)}
+.legend span{display:inline-flex;align-items:center;gap:4px}.legend b{display:inline-block;width:10px;height:10px}
+.trend{display:flex;margin-top:6px}
+.tcol{flex:1;display:flex;flex-direction:column;align-items:center}
+.tcol .tv{font-size:12px;color:var(--text2);height:14px;line-height:14px}
+.tcol .tb{width:62%;height:56px;background:var(--track);position:relative;margin-top:0}
+.tcol .tb i{position:absolute;left:0;right:0;bottom:0;display:block}
+.tcol .tl{font-size:12px;color:var(--muted);margin-top:6px;white-space:nowrap}
+.zero{font-size:12px;color:var(--muted)}
+
+/* ---- demo controls ---- */
+.panel{max-width:640px;margin:14px auto 0;padding:0 16px}
+.panel h2{font-size:13px;margin:0 0 8px;font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{font:inherit;font-size:13px;color:inherit;background:transparent;border:1px solid currentColor;border-radius:999px;padding:6px 13px;cursor:pointer;opacity:.9}
+.chips button:hover{opacity:1;background:rgba(128,128,128,.18)}
+.note{font-size:12.5px;opacity:.72;line-height:1.5;margin:10px 0 0}
+.foot{max-width:640px;margin:18px auto 34px;padding:0 16px;font-size:12px;opacity:.62;line-height:1.55}
+
+/* ---- popups ---- */
+.menu{position:fixed;z-index:50;min-width:230px;background:var(--panel);color:var(--text);border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.4);padding:3px 0;font-size:12.5px}
+.menu button{all:unset;box-sizing:border-box;display:flex;justify-content:space-between;gap:24px;width:100%;padding:6px 14px;cursor:pointer}
+.menu button:hover,.menu button:focus-visible{background:var(--track)}
+.menu .acc{color:var(--muted)}
+.menu hr{border:0;border-top:1px solid var(--border);margin:3px 0}
+.dwin{position:fixed;z-index:40;top:max(10vh,24px);left:50%;transform:translateX(-50%);width:min(440px,calc(100vw - 16px));max-height:calc(100vh - 48px);overflow:auto;
+  background:var(--bg);color:var(--text);box-shadow:0 20px 60px rgba(0,0,0,.55),0 0 0 1px rgba(128,128,128,.3);border-radius:8px;font-size:13px}
+.dwin .tbar{position:sticky;top:0}
+.dwin .tbar button{width:40px}
+.dwrap{padding:14px 16px}
+.about-top{display:flex;align-items:center;gap:14px}
+.about-top svg{width:60px;height:60px;flex:none}
+.irow{display:flex;justify-content:space-between;gap:18px;padding:3px 0;font-size:12px}
+.irow .k{color:var(--muted)}.irow .vv{text-align:right}
+.irow a,.lnk{color:var(--link);cursor:pointer;text-decoration:none}
+.irow a:hover,.lnk:hover{text-decoration:underline}
+.legal{font-size:12px;color:var(--muted);margin-top:8px}
+.brow2{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}.brow2 .sp{flex:1}
+.notes{background:var(--panel);border:1px solid var(--border);padding:8px 10px;max-height:300px;overflow:auto;font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.45;margin-top:10px}
+.notes b{color:var(--text)}.notes .d{color:var(--muted)}
+.dmsg{font-size:12px;color:var(--muted);margin-top:8px;min-height:1em}
+.toast{position:fixed;z-index:60;left:50%;bottom:22px;transform:translateX(-50%);background:#2b2b2a;color:#eee;font-size:13px;padding:9px 16px;border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,.4);max-width:calc(100vw - 24px);text-align:center}
+.wtoast{position:fixed;z-index:55;right:14px;bottom:14px;width:min(330px,calc(100vw - 28px));background:#2b2b2a;color:#f2f2f2;border-radius:8px;padding:12px 14px;box-shadow:0 8px 28px rgba(0,0,0,.5);font-size:13px;border:1px solid #444}
+.wtoast small{display:block;color:#aaa;font-size:11.5px;margin-bottom:4px}
+.wtoast b{display:block;margin-bottom:2px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs><linearGradient id="ig" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2a29"/><stop offset="1" stop-color="#161615"/></linearGradient></defs>
+  <symbol id="appicon" viewBox="0 0 256 256">
+    <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#ig)"/>
+    <rect x="8.5" y="8.5" width="239" height="239" rx="51.5" fill="none" stroke="#3a3a38" stroke-width="2"/>
+    <circle cx="128" cy="128" r="78" fill="none" stroke="#2c2c2a" stroke-width="36"/>
+    <circle cx="128" cy="128" r="78" fill="none" stroke="#D97757" stroke-width="36" stroke-linecap="round" stroke-dasharray="326.7 490.1" transform="rotate(-90 128 128)"/>
+    <circle cx="128" cy="128" r="78" fill="none" stroke="#EF9F27" stroke-width="36" stroke-linecap="round" stroke-dasharray="81.7 490.1" stroke-dashoffset="-245.0" transform="rotate(-90 128 128)"/>
+    <circle cx="60.5" cy="167" r="38" fill="#EF9F27" opacity="0.28"/>
+    <path d="M60.5,127 Q66.9,160.6 100.5,167 Q66.9,173.4 60.5,207 Q54.1,173.4 20.5,167 Q54.1,160.6 60.5,127 Z" fill="#FAC775"/>
+    <circle cx="60.5" cy="167" r="7.2" fill="#fff"/>
+  </symbol>
+</svg>
+
+<div class="top">
+  <h1>Claude Usage Dashboard · interactive demo</h1>
+  <a class="gh" href="https://github.com/tedmelnick/claude-usage-dashboard" target="_blank" rel="noopener">View on GitHub ↗</a>
+  <div class="lede" style="flex-basis:100%">Everything here is clickable and uses made-up numbers. The real app is a Windows desktop window.</div>
+</div>
+
+<div class="stage" id="stage" data-theme="dark">
+  <div class="win" id="win" data-mode="solid">
+    <div class="tbar">
+      <svg class="ic"><use href="#appicon"/></svg><span class="tt">Claude usage</span>
+      <button data-act="fake-min" aria-label="Minimize">&#8211;</button>
+      <button data-act="fake-max" aria-label="Maximize">&#9633;</button>
+      <button class="x" data-act="fake-close" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="inner" id="app"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Try the rest of the app</h2>
+  <div class="chips">
+    <button data-act="demo-alert">Trigger an alert</button>
+    <button data-act="demo-stale">Show the stale warning</button>
+    <button data-act="demo-update">Show an update</button>
+    <button data-act="demo-reset">Reset demo</button>
+  </div>
+  <p class="note">These mirror the real app's <code>--test-alert</code>, <code>--stale</code> and <code>--demo-update</code> previews. Click the version number (top left of the window) for the About, What's new and update menu, and use Theme, View, Clock and Window to change the look.</p>
+</div>
+<div class="foot">Unofficial project. Not affiliated with or endorsed by Anthropic. Free and open source (MIT). This page is a hand-built mock-up of version 2.3.0 with fake data; it never contacts Anthropic or reads any account.</div>
+
+<div id="dlgHost"></div>
+<div id="menuHost"></div>
+<div id="toastHost"></div>
+
+<script>
+(function(){
+"use strict";
+var REPO="https://github.com/tedmelnick/claude-usage-dashboard";
+var VERSION="2.3.0", RELEASED="2026-11-21T13:47:50-05:00";
+var DAY_CHOICES=[7,14,30];
+var SOURCE_COLORS={cowork:"var(--mythos)",claude_duet:"var(--fable)",claude_code:"var(--teal)",chat:"var(--blue)"};
+var FAMILY_COLORS={fable:"var(--fable)",mythos:"var(--mythos)",opus:"var(--teal)",sonnet:"var(--blue)",haiku:"var(--amber)",other:"var(--other)"};
+var FAMILY_ORDER=["fable","mythos","opus","sonnet","haiku","other"];
+
+/* text of the last three CHANGELOG.md entries (what "What's new" shows when you're up to date) */
+var CHANGELOG=[
+ {tag:"v2.3.0",date:"",notes:"Features\n• Clicking the version next to the title now opens a menu: About this app, What's new, Copy version info, Open release page and Check for updates.\n• About this app: what the dashboard is, its version, whether you're running a git clone or a downloaded copy, and a link to the GitHub page.\n• What's new: the recent entries of this changelog when you're up to date. When a newer release is waiting, the blue pill still opens the release notes with Update now, Later and Skip this version.\n• Copy version info puts the version, install type, Python and OS on the clipboard for a bug report (no file paths or account details).\n• Open release page opens this version's page on GitHub.\n• Check for updates does what clicking the version used to do. The small check or blue pill next to the version works as before.\n\nOther\n• --demo-update now pretends v2.4.0 and v2.3.1 are out."},
+ {tag:"v2.2.0",date:"",notes:"Features\n• The window shows which version you're running, next to the title (full and compact views).\n• A small green check after the version means you're up to date. Click the version to check GitHub right away.\n• When a newer release is published, the check turns into a blue pill (for example \"↑ v2.3.0\"). Click it to read the release notes for every version you're behind, then choose Update now, Later or Skip this version.\n• Update now downloads that release from GitHub, keeps your settings and history, backs up the files it replaces (in _backup_before_update), and restarts the dashboard. If anything goes wrong it puts the old files back. A copy that is a git clone is never overwritten; update it with git pull.\n• The app looks for updates when it starts and every 6 hours. Turn that off with check_for_updates set to false; clicking the version still checks.\n• python claude_usage_dashboard.py --demo-update previews the update pill and window with made-up releases and installs nothing.\n\nFixes\n• The version number inside the app was still 2.0.0 in releases 2.0.1 and 2.1.0. A test now keeps it in step with this file."},
+ {tag:"v2.1.0",date:"",notes:"Features\n• New app icon for the desktop shortcut and the window: a countdown ring around three gauge bars.\n• Live taskbar icon (Windows): two bars, current session and weekly, that turn blue, amber or red and show a spark when a limit is urgent (90% used, or on pace to run out).\n• Taskbar progress strip showing the more urgent of the two limits, in green, yellow or red.\n• dynamic_icon and taskbar_progress settings (both on by default).\n• Setup.bat puts the icon on the desktop shortcut."}
+];
+var DEMO_RELEASES=[
+ {tag:"v2.4.0",date:"2026-11-28",notes:"New\n• A made-up feature, shown only in this preview\n• Another made-up change"},
+ {tag:"v2.3.1",date:"2026-11-24",notes:"Fixes\n• A made-up fix, shown only in this preview"}
+];
+
+var cfg,st;
+function freshCfg(){return {theme:cfg?cfg.theme:"dark",clock24:false,compact:false,pin:true,mode:"solid",days:7,skipped:""};}
+function freshState(){return {usage:null,history:null,trend:null,lastOk:Date.now()-30000,lastErr:null,forceAt:0,refreshing:false,
+  alert:null,alertUntil:0,alertIdx:0,stale:false,
+  upd:{status:"current",checking:false,latest:null,releases:[]},msg:null,demoUpdate:false,dlg:null};}
+cfg={theme:"dark",clock24:false,compact:false,pin:true,mode:"solid",days:7,skipped:""};
+st=freshState();
+
+/* ---------- helpers ported from core.py ---------- */
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function fmtDur(min){var m=Math.round(Math.max(0,min));var d=Math.floor(m/1440),rem=m%1440,h=Math.floor(rem/60),mm=rem%60;
+  if(d)return d+"d "+h+"h";if(h)return h+"h "+mm+"m";return mm+"m";}
+function fmtTokens(n){if(n>=1e9)return (n/1e9).toFixed(1)+"B";if(n>=1e6)return (n/1e6).toFixed(1)+"M";if(n>=1e3)return Math.round(n/1e3)+"K";return String(Math.floor(n));}
+function p2(n){return (n<10?"0":"")+n;}
+function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();}
+var WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function fmtResetClock(ms,clock24,now){
+  var d=new Date(ms),today=new Date(now),t;
+  if(clock24)t=p2(d.getHours())+":"+p2(d.getMinutes());
+  else{var h=d.getHours()%12||12;t=h+":"+p2(d.getMinutes())+" "+(d.getHours()<12?"AM":"PM");}
+  return sameDay(d,today)?t:WD[d.getDay()]+" "+t;}
+function project(it,now){
+  var res={state:"unknown",projected:null,remaining:Math.max(0,(it.resets-now)/60000),hitIn:null,earlyBy:null};
+  if(it.pct>=100){res.state="full";return res;}
+  var win=it.win,rem=res.remaining,el=win-rem;
+  if(it.pct<=0){res.state="ok";res.projected=0;return res;}
+  if(el<Math.max(5,win*0.02)){res.state="early";return res;}
+  var rate=it.pct/el,proj=it.pct+rate*rem;res.projected=proj;
+  if(proj>=100){var hit=(100-it.pct)/rate;res.state="over";res.hitIn=hit;res.earlyBy=Math.max(0,rem-hit);}
+  else if(proj>=90)res.state="warn";else res.state="ok";
+  return res;}
+function verdict(p){var s=p.state;
+  if(s==="full")return ["Limit reached","over"];
+  if(s==="over")return ["Projected to run out about "+fmtDur(p.earlyBy)+" early","over"];
+  if(s==="warn")return ["Close: on pace for "+Math.round(p.projected)+"% at reset","warn"];
+  if(s==="ok")return ["On track, you won't hit the limit","ok"];
+  if(s==="early")return ["Too early in this window to project","none"];
+  return ["","none"];}
+function subText(p,resets,clock24,now){var parts=[];
+  if(p.remaining!==null){parts.push("Resets in "+fmtDur(p.remaining)+" ("+fmtResetClock(resets,clock24,now)+")");}
+  if(p.state==="over")parts.push("pace hits 100% in about "+fmtDur(p.hitIn));
+  else if((p.state==="ok"||p.state==="warn")&&p.projected!==null)parts.push("on pace for "+Math.round(p.projected)+"% at reset");
+  return parts.join(" · ");}
+
+/* ---------- fake data, ported from demo.py ---------- */
+function demoUsage(now){var m=60000,h=3600000;
+  var items=[
+   {label:"Current session",order:0,kind:"session",pct:42,resets:now+157*m,win:300},
+   {label:"Weekly, all models",order:1,kind:"weekly_all",pct:68,resets:now+107*h,win:10080},
+   {label:"Weekly, Sonnet",order:2,kind:"weekly_scoped",pct:55,resets:now+107*h,win:10080},
+   {label:"Weekly, Opus",order:2,kind:"weekly_scoped",pct:31,resets:now+107*h,win:10080},
+   {label:"Weekly, Fable",order:2,kind:"weekly_scoped",pct:12,resets:now+107*h,win:10080}];
+  var rows=[{key:"cowork",name:"Cowork",pct:41},{key:"claude_code",name:"Claude Code",pct:14},{key:"chat",name:"Chats",pct:7},{key:"claude_duet",name:"Claude Duet",pct:6}];
+  return {items:items,rows:rows};}
+function demoHistory(days){
+  var base=[[3.2,1.1,0.2],[5.0,2.0,0.4],[2.1,0.9,0.1],[6.4,3.0,0.8],[4.1,1.5,0.3],[5.5,2.2,0.5],[3.0,1.9,0.9]];
+  var out=[],today=new Date();today.setHours(12,0,0,0);
+  for(var i=0;i<days;i++){var d=new Date(today);d.setDate(today.getDate()-(days-1-i));var b=base[i%7];
+    out.push({date:d,fam:{sonnet:Math.floor(b[0]*1e6),opus:Math.floor(b[1]*1e6),fable:Math.floor(b[2]*1e6)}});}
+  var sc=days/7;
+  var proj=[
+   {name:"claude-usage-dashboard",tokens:Math.floor(9e6*sc)+Math.floor(4e6*sc)},
+   {name:"mobile-app",tokens:Math.floor(7e6*sc)},
+   {name:"data-pipeline",tokens:Math.floor(3.5e6*sc)+Math.floor(1.2e6*sc)},
+   {name:"blog-engine",tokens:Math.floor(2.1e6*sc)},
+   {name:"scratch",tokens:Math.floor(0.6e6*sc)}];
+  return {days:out,projects:proj};}
+function demoTrend(weeks,now){
+  var peaks=[54,71,88,63,97,76,82,68,59,91,73,66],week=7*86400000,out=[];
+  for(var i=0;i<weeks;i++){var off=weeks-1-i;
+    out.push({resets:now+107*3600000-off*week,peak:off?peaks[i%peaks.length]:68,current:off===0});}
+  return out;}
+function newData(){var now=Date.now();
+  st.usage=demoUsage(now);st.history=demoHistory(cfg.days);st.trend=demoTrend(8,now);st.lastOk=now;st.lastErr=null;}
+
+/* ---------- update state ---------- */
+function vlabel(t){t=String(t||"");return t.charAt(0)==="v"?t:"v"+t;}
+function pending(){var l=st.upd.latest;return l&&l!==cfg.skipped?l:null;}
+function checkStatusText(){var u=st.upd;if(u.checking)return "Checking…";if(pending())return vlabel(pending())+" available";return u.status==="current"?"Up to date":"";}
+function note(text,kind){kind=kind||"ok";st.msg={text:(kind==="ok"?"✓ ":"")+text,until:Date.now()+4000,kind:kind};render();}
+function runCheck(manual){
+  var u=st.upd;if(u.checking)return;u.checking=true;render();
+  setTimeout(function(){
+    u.checking=false;
+    var newer=st.demoUpdate?DEMO_RELEASES:[];
+    u.releases=newer;u.latest=newer.length?newer[0].tag:null;u.status=u.latest?"available":"current";
+    if(manual){
+      if(u.latest&&u.latest===cfg.skipped)cfg.skipped="";
+      if(!u.latest)st.msg={text:"✓ Up to date",until:Date.now()+4000,kind:"ok"};
+    }
+    render();renderDialog();
+  },manual?800:0);}
+
+/* ---------- rendering ---------- */
+var $dlg=document.getElementById("dlgHost"),$menu=document.getElementById("menuHost");
+var $app=document.getElementById("app"),$win=document.getElementById("win"),$stage=document.getElementById("stage");
+function indicatorHtml(){
+  var u=st.upd,c=null;
+  if(u.checking)c={t:"Checking…",cls:"muted"};
+  else if(st.msg&&Date.now()<st.msg.until)c={t:st.msg.text,cls:st.msg.kind==="ok"?"green":"muted"};
+  else if(pending())c={t:"↑ "+vlabel(pending()),cls:"pill"};
+  else if(u.status==="current")c={t:"✓",cls:"green"};
+  if(!c)return "";
+  var tip=pending()?vlabel(pending())+" is available. Click to see what's new":"You're up to date. Click to check again";
+  return '<span class="ind '+c.cls+'" data-act="indicator" title="'+esc(tip)+'">'+esc(c.t)+'</span>';}
+function btn(label,act,extra){return '<button class="btn" data-act="'+act+'"'+(extra||"")+'>'+label+'</button>';}
+function barHtml(pct,proj,color,ghost){
+  var h='<div class="bar">';
+  if(proj)h+='<i style="width:'+Math.min(proj,100)+'%;background:'+ghost+'"></i>';
+  return h+'<i style="width:'+Math.min(pct,100)+'%;background:'+color+'"></i></div>';}
+function blockHtml(it,small,now){
+  var p=project(it,now),col="var(--blue)",ghost="var(--blue-d)";
+  if(p.state==="over"||p.state==="full"){col="var(--red)";ghost="var(--red-d)";}
+  else if(p.state==="warn"){col="var(--amber)";ghost="var(--amber-d)";}
+  else if(it.order>=2&&/opus/i.test(it.label))col="var(--teal)";
+  var proj=(p.state==="ok"||p.state==="warn"||p.state==="over")?p.projected:null;
+  var h='<div class="block'+(small?' small':'')+'"><div class="brow"><span class="l">'+esc(it.label)+'</span><span class="v">'+Math.round(it.pct)+'%</span></div>';
+  h+=barHtml(it.pct,proj&&proj>it.pct?proj:0,col,ghost);
+  var s=subText(p,it.resets,cfg.clock24,now);if(s)h+='<div class="sub">'+esc(s)+'</div>';
+  var v=verdict(p);
+  if(v[0]&&(!(small||cfg.compact)||v[1]==="over"||v[1]==="warn"))h+='<span class="chip k-'+v[1]+'">'+esc(v[0])+'</span>';
+  return h+'</div>';}
+function limitsHtml(now){
+  var u=st.usage,items=u.items,top=items.filter(function(i){return i.order<2;}),scoped=items.filter(function(i){return i.order>=2;});
+  var h="";
+  top.forEach(function(i){h+=blockHtml(i,false,now);});
+  if(cfg.compact){scoped.forEach(function(i){var s=project(i,now).state;if(s==="over"||s==="warn"||s==="full")h+=blockHtml(i,true,now);});return h;}
+  if(scoped.length){h+='<div class="sepl"></div>';scoped.forEach(function(i){h+=blockHtml(i,true,now);});}
+  if(u.rows.length){
+    h+='<div class="sepl"></div><div class="hdr"><span>Usage by source, % of weekly limit</span></div><div class="grid srcgrid">';
+    u.rows.forEach(function(r){h+='<span class="n">'+esc(r.name)+'</span>'+barHtml(r.pct,0,SOURCE_COLORS[r.key]||"var(--other)","var(--track)")+'<span class="p">'+Math.round(r.pct)+'%</span>';});
+    h+='</div>';}
+  return h;}
+function historyHtml(){
+  var H=st.history,days=H.days,n=days.length;
+  var fams=[];days.forEach(function(d){for(var f in d.fam)if(fams.indexOf(f)<0)fams.push(f);});
+  var order=FAMILY_ORDER.filter(function(f){return fams.indexOf(f)>=0;});
+  var totals=days.map(function(d){var s=0;for(var f in d.fam)s+=d.fam[f];return s;});
+  var mx=Math.max.apply(null,totals)||1,sum=totals.reduce(function(a,b){return a+b;},0);
+  var h='<div class="hrow"><span class="l">Claude Code, last '+n+' days</span><span class="r">'+btn(n+'d','days')+'<span class="tot">'+fmtTokens(sum)+' tokens</span></span></div>';
+  var bw=n<=7?62:80,step=n<=7?1:Math.ceil(n/6);
+  h+='<div class="chart">';
+  days.forEach(function(d){h+='<div class="col"><div class="stack" style="width:'+bw+'%">';
+    order.forEach(function(f){var t=d.fam[f];if(!t)return;var ht=54*t/mx;if(ht<1)return;h+='<div style="height:'+ht.toFixed(1)+'px;background:'+FAMILY_COLORS[f]+'"></div>';});
+    h+='</div></div>';});
+  h+='</div><div class="axis">';
+  days.forEach(function(d,i){var show=((n-1-i)%step===0);var lbl=n<=7?WD[d.date.getDay()].slice(0,2):(d.date.getMonth()+1)+"/"+d.date.getDate();
+    h+='<span>'+(show?lbl:"")+'</span>';});
+  h+='</div><div class="sub" style="margin-top:4px">Today: '+fmtTokens(totals[n-1])+' tokens</div><div class="legend">';
+  order.forEach(function(f){var t=0;days.forEach(function(d){t+=d.fam[f]||0;});h+='<span><b style="background:'+FAMILY_COLORS[f]+'"></b>'+f.charAt(0).toUpperCase()+f.slice(1)+' '+fmtTokens(t)+'</span>';});
+  h+='</div>';
+  var rows=H.projects.slice().sort(function(a,b){return b.tokens-a.tokens;}).slice(0,5);
+  if(rows.length){var m=rows[0].tokens||1;
+    h+='<div class="sub" style="margin:12px 0 4px">Top projects, last '+n+' days</div><div class="grid projgrid">';
+    rows.forEach(function(r){var nm=r.name.length<=18?r.name:r.name.slice(0,17)+"…";
+      h+='<span class="n">'+esc(nm)+'</span>'+barHtml(100*r.tokens/m,0,"var(--teal)","var(--track)")+'<span class="tv">'+fmtTokens(r.tokens)+'</span>';});
+    h+='</div>';}
+  return h;}
+function trendHtml(){
+  var peaks=st.trend,h='<div style="color:var(--text2)">Weekly peak, all models</div>';
+  var cur=peaks[peaks.length-1],prev=peaks[peaks.length-2];
+  if(cur.current){var diff=cur.peak-prev.peak,word=diff>0?"ahead of":diff<0?"behind":"level with",gap=diff?" by "+Math.abs(diff)+" points":"";
+    h+='<div class="sub" style="margin-top:2px">This week '+cur.peak+'%, '+word+" last week's "+prev.peak+'%'+gap+'</div>';}
+  h+='<div class="trend">';
+  peaks.forEach(function(pk){var v=pk.peak,col=v>=100?"var(--red)":v>=80?"var(--amber)":"var(--blue)";
+    var lbl;if(pk.current)lbl="now";else{var e=new Date(pk.resets-60000);lbl=MO[e.getMonth()]+" "+e.getDate();}
+    h+='<div class="tcol"><span class="tv">'+v+'</span><div class="tb"><i style="height:'+(Math.min(v,100))+'%;background:'+col+'"></i></div><span class="tl">'+lbl+'</span></div>';});
+  return h+'</div>';}
+function statusText(){
+  var age=(Date.now()-st.lastOk)/1000,txt;
+  if(st.refreshing)return {txt:"Refreshing…",stale:false};
+  var staleAfter=300,isStale=age>staleAfter||st.stale;
+  if(age<10)txt="Updated just now";else if(age<90)txt="Updated "+Math.floor(age)+"s ago";else txt="Updated "+Math.floor(age/60)+" min ago";
+  if(isStale)txt="Last updated "+Math.floor(age/60)+" min ago";
+  return {txt:txt,stale:isStale};}
+function render(){
+  if(!st.usage)newData();
+  var now=Date.now(),mode=cfg.mode,c=cfg.compact;
+  $stage.setAttribute("data-theme",cfg.theme);$dlg.setAttribute("data-theme",cfg.theme);$menu.setAttribute("data-theme",cfg.theme);$win.setAttribute("data-mode",mode);
+  document.body.className=cfg.theme==="light"?"light":"";
+  var s=statusText();
+  var h='<div class="head"><div class="hl"><span class="title">Claude usage</span><span class="ver" data-act="vermenu" title="Click for About, What\'s new and updates">v'+VERSION+'</span>'+indicatorHtml()+'</div><div class="hr">';
+  if(!c){h+=btn("Open folder","folder")+btn("On top: "+(cfg.pin?"on":"off"),"pin");}
+  h+=btn("View: "+(c?"Compact":"Full"),"view")+btn("Refresh","refresh");
+  if(mode==="none")h+=btn("✕","fake-close");
+  h+='</div></div><div class="statusrow"><div class="dotwrap"><span class="dot'+(s.stale?' stale':'')+'"></span><span id="stxt">'+esc(s.txt)+'</span></div>';
+  if(!c)h+='<div class="sr">'+btn("Clock: "+(cfg.clock24?"24 hr":"12 hr"),"clock")+btn("Theme: "+(cfg.theme==="dark"?"Dark":"Light"),"theme")+btn("Window: "+({solid:"Solid",glass:"See-through",none:"No background"}[mode]),"mode")+'</div>';
+  h+='</div>';
+  if(s.stale&&!st.refreshing){var reason=st.lastErr||"No update for "+Math.floor((now-st.lastOk)/60000)+" min.";
+    h+='<div class="banner">'+esc(reason+" Numbers may be out of date. Press Refresh to retry.")+'</div>';}
+  if(st.alert&&now<st.alertUntil){var kind=(st.alert.kind==="full"||st.alert.kind==="runout")?"over":"warn";
+    h+='<div class="alertbar k-'+kind+'" data-act="dismiss-alert">'+esc(st.alert.message)+'&nbsp; (click to dismiss)</div>';}
+  h+='<div class="'+(c?'compact':'')+'">'+limitsHtml(now)+'</div>';
+  if(!c){h+='<div class="sepl a"></div>'+historyHtml()+'<div class="sepl b"></div>'+trendHtml();}
+  $app.innerHTML=h;}
+
+/* ---------- dialogs (About, What's new) ---------- */
+function releasedText(){var d=new Date(RELEASED);if(isNaN(d))return "";return MO[d.getMonth()]+" "+d.getDate()+", "+d.getFullYear()+" "+p2(d.getHours())+":"+p2(d.getMinutes());}
+function dwinOpen(title,body){return '<div class="dwin"><div class="tbar"><svg class="ic"><use href="#appicon"/></svg><span class="tt">'+esc(title)+'</span><button class="x" data-act="dlg-close" aria-label="Close">&#10005;</button></div><div class="dwrap">'+body+'</div></div>';}
+function renderDialog(){
+  var d=st.dlg;if(!d){$dlg.innerHTML="";return;}
+  if(d.type==="about"){
+    var when=releasedText();
+    var b='<div class="about-top"><svg><use href="#appicon"/></svg><div><div class="title">Claude Usage Dashboard</div><div class="sub" style="margin-top:2px">Version '+VERSION+(when?" · released "+esc(when):"")+'</div></div></div><div style="margin-top:14px">'
+     +'<div class="irow"><span class="k">Install</span><span class="vv">web demo (the real app is a Windows desktop window)</span></div>'
+     +'<div class="irow"><span class="k">Runtime</span><span class="vv">your browser</span></div>'
+     +'<div class="irow"><span class="k">Settings</span><span class="vv">config.json · <a data-act="folder">Open folder</a></span></div>'
+     +'<div class="irow"><span class="k">Source</span><span class="vv"><a href="'+REPO+'" target="_blank" rel="noopener">github.com/tedmelnick/claude-usage-dashboard</a></span></div>'
+     +'<div class="irow"><span class="k">Updates</span><span class="vv">'+esc(checkStatusText()||"Not checked yet")+'</span></div></div>'
+     +'<div class="legal">Free and open source (MIT). Unofficial: not affiliated with or endorsed by Anthropic.</div>'
+     +'<div class="brow2">'+btn("Copy version info","copy")+btn("Check for updates","check")+'<span class="sp"></span>'+btn("Close","dlg-close")+'</div>';
+    $dlg.innerHTML=dwinOpen("About Claude usage",b);return;}
+  if(d.type==="new"){
+    var latest=pending(),upd=!!(latest&&st.upd.releases.length);
+    var entries=upd?st.upd.releases:CHANGELOG;
+    var b2='<div class="title">What\'s new</div><div class="sub" style="margin:2px 0 0">'+(upd?"You have v"+VERSION+". The latest is "+esc(vlabel(latest))+".":"You're on v"+VERSION+". Recent changes:")+'</div><div class="notes">';
+    entries.forEach(function(r){b2+='<b>'+esc(vlabel(r.tag))+'</b><span class="d">'+(r.date?"   "+esc(r.date):"")+'</span>\n'+esc(r.notes||"No notes for this release.")+'\n\n';});
+    b2+='</div><div class="dmsg" style="'+(d.err?'color:var(--over-fg)':'')+'">'+esc(d.msg||"")+'</div><div class="brow2">';
+    if(!upd)b2+='<span class="sp"></span>'+btn("Open release page","release")+btn("Close","dlg-close");
+    else b2+=btn("Skip this version","skip",d.busy?" disabled":"")+'<span class="sp"></span>'+btn("Later","dlg-close",d.busy?" disabled":"")+'<button class="btn pillbtn" data-act="do-update"'+(d.busy?" disabled":"")+'>Update now</button>';
+    b2+='</div>';
+    $dlg.innerHTML=dwinOpen("What's new",b2);return;}}
+function openDialog(type){st.dlg={type:type,msg:"",err:false,busy:false};renderDialog();}
+function closeDialog(){st.dlg=null;renderDialog();}
+
+/* ---------- version menu ---------- */
+function closeMenu(){$menu.innerHTML="";}
+function openMenu(x,y){
+  var status=checkStatusText(),hint=status==="Up to date"?"✓ "+status:pending()?"↑ "+vlabel(pending()):status;
+  var h='<div class="menu" id="menuBox" role="menu">'
+   +'<button data-act="m-about">About this app</button>'
+   +'<button data-act="m-new">What\'s new in '+vlabel(VERSION)+'</button>'
+   +'<button data-act="m-copy">Copy version info</button>'
+   +'<button data-act="m-release">Open release page<span class="acc">GitHub</span></button><hr>'
+   +'<button data-act="m-check">Check for updates'+(hint?'<span class="acc">'+esc(hint)+'</span>':'')+'</button></div>';
+  $menu.innerHTML=h;
+  var box=document.getElementById("menuBox"),w=box.offsetWidth,hh=box.offsetHeight;
+  box.style.left=Math.max(6,Math.min(x,window.innerWidth-w-6))+"px";
+  box.style.top=Math.max(6,Math.min(y,window.innerHeight-hh-6))+"px";}
+
+/* ---------- small helpers ---------- */
+var toastTimer=null;
+function toast(msg){var el=document.getElementById("toastHost");el.innerHTML='<div class="toast">'+esc(msg)+'</div>';clearTimeout(toastTimer);toastTimer=setTimeout(function(){el.innerHTML="";},2600);}
+var wtTimer=null;
+function winToast(title,msg){var el=document.getElementById("toastHost");
+  el.innerHTML='<div class="wtoast"><small>Windows notification (the real app sends one too)</small><b>'+esc(title)+'</b>'+esc(msg)+'</div>';
+  clearTimeout(toastTimer);toastTimer=setTimeout(function(){el.innerHTML="";},6000);}
+function copyText(text,done){
+  function fail(){note("Couldn't copy","err");}
+  try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,function(){legacy();});return;}}catch(e){}
+  legacy();
+  function legacy(){try{var ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();var ok=document.execCommand("copy");document.body.removeChild(ta);ok?done():fail();}catch(e){fail();}}}
+function versionInfo(){return "Claude Usage Dashboard v"+VERSION+"\nInstall: web demo\nRuntime: browser\nOS: "+(navigator.platform||"unknown")+"\nUpdates: "+(checkStatusText()||"not checked yet").toLowerCase().replace(/^up to date$/,"up to date");}
+function doRefresh(){
+  if(Date.now()-st.forceAt<3000)return;st.forceAt=Date.now();st.refreshing=true;render();
+  setTimeout(function(){st.refreshing=false;st.stale=false;newData();render();},600);}
+var ALERTS=[
+ function(){var it=st.usage.items[1],p=project(it,Date.now());return {kind:"runout",title:"Claude usage on pace to run out",message:it.label+": at this pace you'll run out about "+fmtDur(p.earlyBy)+" before it resets."};},
+ function(){return {kind:"threshold",title:"Claude usage alert",message:"Current session is at 80%. Resets in 1h 12m."};},
+ function(){var p=project(st.usage.items[1],Date.now());return {kind:"full",title:"Claude limit reached",message:"Weekly, all models is at 100%. Resets in "+fmtDur(p.remaining)+"."};},
+ function(){return {kind:"reset",title:"Claude limit reset",message:"Current session has reset. Usage is back to 3%."};}];
+function triggerAlert(){var a=ALERTS[st.alertIdx%ALERTS.length]();st.alertIdx++;st.alert=a;st.alertUntil=Date.now()+15*60000;render();winToast(a.title,a.message);}
+function resetDemo(){cfg={theme:cfg.theme,clock24:false,compact:false,pin:true,mode:"solid",days:7,skipped:""};st=freshState();newData();closeMenu();render();renderDialog();toast("Demo reset");}
+
+/* ---------- events ---------- */
+document.addEventListener("click",function(e){
+  var t=e.target.closest("[data-act]");
+  var inMenu=e.target.closest("#menuBox");
+  if(!inMenu&&!(t&&t.getAttribute("data-act")==="vermenu"))closeMenu();
+  if(!t)return;
+  var a=t.getAttribute("data-act");
+  switch(a){
+   case "vermenu":{var r=t.getBoundingClientRect();openMenu(r.left,r.bottom+4);e.stopPropagation();break;}
+   case "indicator": if(pending())openDialog("new");else runCheck(true);break;
+   case "m-about":closeMenu();openDialog("about");break;
+   case "m-new":closeMenu();openDialog("new");break;
+   case "m-copy":closeMenu();copyText(versionInfo(),function(){note("Copied");});break;
+   case "m-release":closeMenu();window.open(REPO+"/releases/tag/v"+VERSION,"_blank","noopener");break;
+   case "m-check":closeMenu();runCheck(true);break;
+   case "release":window.open(REPO+"/releases/tag/v"+VERSION,"_blank","noopener");break;
+   case "copy":copyText(versionInfo(),function(){note("Copied");});break;
+   case "check":runCheck(true);break;
+   case "dlg-close":closeDialog();break;
+   case "skip":cfg.skipped=st.upd.latest;closeDialog();render();break;
+   case "do-update":{var d=st.dlg;d.busy=true;d.err=false;d.msg="Downloading and installing…";renderDialog();
+      setTimeout(function(){if(!st.dlg)return;st.dlg.busy=false;st.dlg.err=true;st.dlg.msg="This is a preview, so nothing was installed.";renderDialog();},1000);break;}
+   case "refresh":doRefresh();break;
+   case "view":cfg.compact=!cfg.compact;render();break;
+   case "pin":cfg.pin=!cfg.pin;render();break;
+   case "theme":cfg.theme=cfg.theme==="dark"?"light":"dark";render();renderDialog();break;
+   case "clock":cfg.clock24=!cfg.clock24;render();break;
+   case "mode":cfg.mode={solid:"glass",glass:"none",none:"solid"}[cfg.mode];render();break;
+   case "days":cfg.days=DAY_CHOICES[(DAY_CHOICES.indexOf(cfg.days)+1)%DAY_CHOICES.length];st.history=demoHistory(cfg.days);render();break;
+   case "folder":toast("In the real app this opens a folder on your PC.");break;
+   case "dismiss-alert":st.alert=null;render();break;
+   case "fake-min":case "fake-max":toast("Window controls are for show in this demo.");break;
+   case "fake-close":toast("Nothing to close here. The real app has no web version.");break;
+   case "demo-alert":triggerAlert();break;
+   case "demo-stale":st.stale=true;st.lastOk=Date.now()-420000;st.lastErr="Can't reach Anthropic (demo).";render();break;
+   case "demo-update":st.demoUpdate=true;st.upd.status="unknown";cfg.skipped="";runCheck(false);toast("Click the blue pill next to the version.");break;
+   case "demo-reset":resetDemo();break;
+  }
+});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"){if($menu.innerHTML)closeMenu();else if(st.dlg)closeDialog();}});
+
+/* ---------- timers (same rhythm as the app) ---------- */
+setInterval(function(){
+  var s=statusText(),el=document.getElementById("stxt");
+  if(el&&el.textContent!==s.txt)el.textContent=s.txt;
+  var wasStale=!!document.querySelector(".dot.stale");
+  if(wasStale!==s.stale&&!st.refreshing)render();
+  if(st.msg&&Date.now()>=st.msg.until){st.msg=null;render();}
+  if(st.alert&&Date.now()>=st.alertUntil){st.alert=null;render();}
+},1000);
+setInterval(function(){if(!st.stale&&!st.refreshing){newData();render();}},60000);   /* auto refresh, like the app's 60 s loop */
+setInterval(render,30000);                                                            /* countdowns */
+
+newData();render();
+})();
+</script>
+</body>
+</html>
