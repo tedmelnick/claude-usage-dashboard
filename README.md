@@ -40,3 +40,4 @@ Updates every 60 seconds. If an update fails, or 5 minutes pass with no success,
 
 ## License
 MIT. See `LICENSE`.
+
