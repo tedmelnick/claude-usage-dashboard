@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1
+Fixes
+- Token refresh no longer fails with a 403. It now uses `platform.claude.com` (Claude Code's current token endpoint), sends the same User-Agent as the usage request, and falls back to the older host. Failures now show the HTTP status.
+
 ## 2.0.0
 Reliability
 - The User-Agent now follows the installed Claude Code version (`user_agent: "auto"`).
