@@ -49,7 +49,7 @@ class FakeRoot(Widget):
 def fake_tk(monkeypatch, tmp_path):
     Widget.instances = []
     tk = types.ModuleType("tkinter")
-    for name in ("Frame", "Label", "Button", "Canvas", "Toplevel", "PhotoImage", "Text"):
+    for name in ("Frame", "Label", "Button", "Canvas", "Toplevel", "PhotoImage", "Text", "Menu"):
         setattr(tk, name, type(name, (Widget,), {}))
     tk.Tk = FakeRoot
     tk.TclError = type("TclError", (Exception,), {})
@@ -169,6 +169,21 @@ def click_label(label):
     raise AssertionError("label has no click handler")
 
 
+def menu_command(label, nth=-1):
+    """Click an entry of the version menu that the last click on the version opened."""
+    menus = [w for w in Widget.instances if type(w).__name__ == "Menu"]
+    assert menus, "the version click opened no menu"
+    for name, _a, k in menus[nth].calls:
+        if name == "add_command" and k.get("label") == label:
+            return k["command"]()
+    raise AssertionError(f"no menu entry {label!r}: {[k.get('label') for n, _a, k in menus[nth].calls if n == 'add_command']}")
+
+
+def open_menu():
+    from usage_dashboard import __version__
+    click_label(label_with("v" + __version__))
+
+
 def test_version_label_and_check_shown(fake_tk):
     from usage_dashboard import __version__
     root = start()
@@ -185,16 +200,16 @@ def test_update_pill_whats_new_and_skip(fake_tk, tmp_path):
     root = [w for w in Widget.instances if isinstance(w, FakeRoot)][0]
     pump(root)
     settle(root)   # the first pump started the automatic check; this shows its answer
-    pill = label_with("\u2191 v2.3.0")
+    pill = label_with("\u2191 v2.4.0")
     click_label(pill)                       # opens the What's new window
     text_box = [w for w in Widget.instances if type(w).__name__ == "Text"][0]
     shown = " ".join(str(a[1]) for n, a, _k in text_box.calls if n == "insert")
-    assert "v2.3.0" in shown and "v2.2.1" in shown and "made-up fix" in shown
+    assert "v2.4.0" in shown and "v2.3.1" in shown and "made-up fix" in shown
     assert "Update now" in buttons() and "Later" in buttons()
     hidden_before = pill.calls.count(("pack_forget", (), {}))
     buttons()["Skip this version"].command()
     cfg = json.loads((tmp_path / "config.json").read_text())
-    assert cfg["skipped_version"] == "v2.3.0"
+    assert cfg["skipped_version"] == "v2.4.0"
     assert pill.calls.count(("pack_forget", (), {})) == hidden_before + 1   # the pill is hidden
 
 
@@ -204,7 +219,7 @@ def test_update_now_in_preview_installs_nothing(fake_tk):
     root = [w for w in Widget.instances if isinstance(w, FakeRoot)][0]
     pump(root)
     settle(root)
-    click_label(label_with("\u2191 v2.3.0"))
+    click_label(label_with("\u2191 v2.4.0"))
     buttons()["Update now"].command()
     settle(root, 1.6)
     assert any("preview" in str(w.kw.get("text", "")) for w in labels())
@@ -229,7 +244,8 @@ def test_clicking_the_version_checks_now(fake_tk, tmp_path, monkeypatch):
     pump(root, 0)
     assert calls == []                      # no automatic check
     from usage_dashboard import __version__
-    click_label(label_with("v" + __version__))
+    open_menu()
+    menu_command("Check for updates")
     settle(root, 0.5)
     assert calls == [__version__]
     label_with("\u2191 v9.0.0")
@@ -247,6 +263,110 @@ def test_automatic_check_and_failed_check(fake_tk, tmp_path, monkeypatch):
     # a failed automatic check shows nothing new, and the window keeps working
     assert not any(str(w.kw.get("text", "")).startswith("\u2191") for w in labels())
     from usage_dashboard import __version__
-    click_label(label_with("v" + __version__))
+    open_menu()
+    menu_command("Check for updates")
     settle(root, 0.5)
     label_with("Couldn't check")
+
+
+# ---- the version menu ----
+
+def test_version_menu_has_the_five_entries(fake_tk):
+    root = start()
+    pump(root)
+    pump(root, 0)
+    open_menu()
+    menu = [w for w in Widget.instances if type(w).__name__ == "Menu"][-1]
+    labels_ = [k.get("label") for n, _a, k in menu.calls if n == "add_command"]
+    from usage_dashboard import __version__
+    assert labels_ == ["About this app", f"What's new in v{__version__}", "Copy version info",
+                       "Open release page", "Check for updates"]
+    hints = {k["label"]: k["accelerator"] for n, _a, k in menu.calls if n == "add_command" and "accelerator" in k}
+    assert hints["Open release page"] == "GitHub"
+    assert any(n == "tk_popup" for n, _a, _k in menu.calls)
+
+
+def test_menu_copy_version_info(fake_tk):
+    from usage_dashboard import __version__
+    root = start()
+    pump(root)
+    pump(root, 0)
+    open_menu()
+    menu_command("Copy version info")
+    appended = [a[0] for n, a, _k in root.calls if n == "clipboard_append"]
+    assert appended and appended[0].startswith(f"Claude Usage Dashboard v{__version__}")
+    assert "Python " in appended[0] and "Updates: " in appended[0]
+    label_with("\u2713 Copied")
+
+
+def test_menu_open_release_page(fake_tk, monkeypatch):
+    import webbrowser
+    from usage_dashboard import __version__
+    opened = []
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or True)
+    root = start()
+    pump(root)
+    pump(root, 0)
+    open_menu()
+    menu_command("Open release page")
+    assert opened == [f"https://github.com/tedmelnick/claude-usage-dashboard/releases/tag/v{__version__}"]
+
+
+def test_menu_release_page_when_no_browser(fake_tk, monkeypatch):
+    import webbrowser
+    monkeypatch.setattr(webbrowser, "open", lambda url: False)
+    root = start()
+    pump(root)
+    pump(root, 0)
+    open_menu()
+    menu_command("Open release page")
+    label_with("Couldn't open the browser")
+
+
+def test_menu_about_and_whats_new_when_up_to_date(fake_tk):
+    from usage_dashboard import __version__
+    root = start()
+    pump(root)
+    pump(root, 0)
+    open_menu()
+    menu_command("About this app")
+    label_with("Claude Usage Dashboard")
+    assert any(str(w.kw.get("text", "")).startswith(f"Version {__version__} \u00b7 released ") and ":" in str(w.kw.get("text", ""))
+               for w in labels())
+    for key in ("Install", "Runtime", "Settings", "Source", "Updates"):
+        label_with(key)
+    label_with("github.com/tedmelnick/claude-usage-dashboard")
+    label_with("Open folder")
+    assert {"Copy version info", "Check for updates", "Close"} <= set(buttons())
+    buttons()["Close"].command()               # frees the one dialog slot
+    open_menu()
+    menu_command(f"What's new in v{__version__}")
+    box = [w for w in Widget.instances if type(w).__name__ == "Text"][-1]
+    shown = " ".join(str(a[1]) for n, a, _k in box.calls if n == "insert")
+    assert f"v{__version__}" in shown
+    assert "Open release page" in buttons() and "Update now" not in buttons()
+
+
+def test_menu_whats_new_with_update_waiting_shows_update_buttons(fake_tk):
+    from usage_dashboard import __version__, gui
+    gui.run_gui(demo=True, demo_update=True)
+    root = [w for w in Widget.instances if isinstance(w, FakeRoot)][0]
+    pump(root)
+    settle(root)
+    open_menu()
+    menu_command(f"What's new in v{__version__}")
+    assert "Update now" in buttons() and "Skip this version" in buttons()
+
+
+def test_about_updates_row_follows_the_check(fake_tk):
+    from usage_dashboard import gui
+    gui.run_gui(demo=True, demo_update=True)
+    root = [w for w in Widget.instances if isinstance(w, FakeRoot)][0]
+    pump(root)
+    settle(root)
+    open_menu()
+    menu_command("About this app")
+    label_with("v2.4.0 available")          # the pretend newer release, in the Updates row
+    menu = [w for w in Widget.instances if type(w).__name__ == "Menu"][-1]
+    hint = [k["accelerator"] for n, _a, k in menu.calls if n == "add_command" and k.get("label") == "Check for updates"]
+    assert hint == ["\u2191 v2.4.0"]        # the menu's right-hand hint shows the waiting update

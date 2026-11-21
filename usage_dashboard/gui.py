@@ -3,20 +3,22 @@
 import json
 import math
 import os
+import platform
 import queue
 import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __version__
+from . import __released__, __version__
 from . import demo as demo_data
 from . import status_icon, taskbar, updater
 from .alerts import AlertTracker, notify
 from .api import UsageError, fetch_usage
-from .config import (APP_DIR, DUMP_PATH, HISTORY_DAY_CHOICES, HISTORY_DB_PATH, load_config,
+from .config import (APP_DIR, CONFIG_PATH, DUMP_PATH, HISTORY_DAY_CHOICES, HISTORY_DB_PATH, load_config,
                      save_config)
 from .core import (fmt_secs, fmt_tokens, next_delay, parse_breakdown, parse_limits,
                    project, reply_problem, sub_text, verdict_text)
@@ -777,6 +779,7 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
 
     def refresh_indicator():
         """What sits right after the version: a green check, 'Checking…', or the update pill."""
+        refresh_about_status()
         u = state["update"]
         msg, until, kind = state["upd_msg"]
         if u["checking"]:
@@ -860,15 +863,16 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
         else:
             run_check(True)
 
-    lbl_ver.bind("<Button-1>", lambda e: run_check(True))
+    lbl_ver.bind("<Button-1>", lambda e: open_version_menu(e))
     lbl_ind.bind("<Button-1>", on_indicator_click)
-    attach_tip(lbl_ver, lambda: "Click to check for updates")
+    attach_tip(lbl_ver, lambda: "Click for About, What's new and updates")
     attach_tip(lbl_ind, lambda: (f"{vlabel(pending_update())} is available. Click to see what's new"
                                  if state["pill"] else "You're up to date. Click to check again"))
 
     dlg = {"w": None}
 
     def close_dialog():
+        state["about_status"] = None
         if dlg["w"] is not None:
             try:
                 dlg["w"].destroy()
@@ -876,38 +880,197 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
                 pass
             dlg["w"] = None
 
-    def open_whats_new():
-        u = state["update"]
-        latest = pending_update()
-        if not latest or not u["releases"]:
-            return
+    def make_dialog(title):
+        """A new small window, or None (after raising the one that is already open)."""
         if dlg["w"] is not None:
             try:
                 dlg["w"].lift()
             except tk.TclError:
                 pass
-            return
+            return None
         win = tk.Toplevel(root)
         dlg["w"] = win
-        win.title("What's new")
+        win.title(title)
         win.configure(bg=BG)
         win.transient(root)
         win.geometry(f"+{root.winfo_x() + 30}+{root.winfo_y() + 40}")
         win.protocol("WM_DELETE_WINDOW", close_dialog)
         wrap = tk.Frame(win, bg=BG, padx=16, pady=14)
         wrap.pack(fill="both", expand=True)
+        return win, wrap
+
+    def note(text, kind="ok"):
+        """A short message right after the version, for a few seconds."""
+        state["upd_msg"] = (("\u2713 " if kind == "ok" else "") + text, time.time() + 4, kind)
+        refresh_indicator()
+
+    def update_status_text():
+        if pending_update():
+            return f"{vlabel(pending_update())} available"
+        return "up to date" if state["update"]["status"] == "current" else "not checked yet"
+
+    def copy_version_info():
+        text = updater.version_info(APP_DIR, getattr(tk, "TkVersion", None), update_status_text())
+        try:
+            root.clipboard_clear()
+            root.clipboard_append(text)
+            root.update()   # keeps the text on the clipboard after the window closes
+        except tk.TclError:
+            note("Couldn't copy", "err")
+            return
+        note("Copied")
+
+    def open_in_browser(url):
+        try:
+            ok = webbrowser.open(url)
+        except Exception:
+            ok = False
+        if not ok:
+            note("Couldn't open the browser", "err")
+
+    def open_release_page():
+        open_in_browser(updater.release_url(__version__))
+
+    def released_text():
+        """'Nov 21, 2026 13:15': the release moment in this PC's own time zone, 24-hour clock."""
+        try:
+            d = datetime.fromisoformat(__released__).astimezone()
+            return f"{d.strftime('%b')} {d.day}, {d.year} {d.strftime('%H:%M')}"
+        except (ValueError, OSError, OverflowError):
+            return ""
+
+    def check_status_text():
+        """'Checking…', 'v2.4.0 available', 'Up to date' or '' (not checked yet)."""
+        u = state["update"]
+        if u["checking"]:
+            return "Checking\u2026"
+        if pending_update():
+            return f"{vlabel(pending_update())} available"
+        return "Up to date" if u["status"] == "current" else ""
+
+    def refresh_about_status():
+        lbl = state.get("about_status")
+        if lbl is None:
+            return
+        try:
+            lbl.config(text=check_status_text() or "Not checked yet")
+        except tk.TclError:
+            state["about_status"] = None
+
+    def open_about():
+        made = make_dialog("About Claude usage")
+        if made is None:
+            return
+        _win, wrap = made
+        link_fg = "#1a5fb4" if cfg.get("theme") == "light" else "#4a9eff"
+        top = tk.Frame(wrap, bg=BG)
+        top.pack(fill="x")
+        try:   # the app icon, shrunk to about 60 px
+            img = tk.PhotoImage(file=str(APP_DIR / "assets" / "icon.png"))
+            img = img.subsample(max(1, round(img.width() / 60)))
+            dlg["icon"] = img   # tkinter drops an image nobody holds on to
+            tk.Label(top, image=img, bg=BG).pack(side="left", padx=(0, 14))
+        except Exception:
+            pass
+        head_txt = tk.Frame(top, bg=BG)
+        head_txt.pack(side="left", anchor="w")
+        tk.Label(head_txt, text="Claude Usage Dashboard", font=f_title, fg=TEXT, bg=BG).pack(anchor="w")
+        when = released_text()
+        tk.Label(head_txt, text=f"Version {__version__}" + (f" \u00b7 released {when}" if when else ""),
+                 font=f_small, fg=MUTED, bg=BG).pack(anchor="w", pady=(2, 0))
+
+        info = tk.Frame(wrap, bg=BG)
+        info.pack(fill="x", pady=(14, 0))
+        info.columnconfigure(1, weight=1)
+        rows = [0]
+
+        def add_row(key):
+            r = rows[0]
+            rows[0] += 1
+            tk.Label(info, text=key, font=f_small, fg=MUTED, bg=BG, anchor="w").grid(
+                row=r, column=0, sticky="nw", pady=3, padx=(0, 18))
+            cell = tk.Frame(info, bg=BG)
+            cell.grid(row=r, column=1, sticky="ne", pady=3)
+            return cell
+
+        def add_text(cell, text, fg=TEXT):
+            lbl = tk.Label(cell, text=text, font=f_small, fg=fg, bg=BG, anchor="e", justify="right")
+            lbl.pack(side="left")
+            return lbl
+
+        def add_link(cell, text, cmd):
+            lbl = tk.Label(cell, text=text, font=f_small, fg=link_fg, bg=BG, cursor="hand2")
+            lbl.pack(side="left")
+            lbl.bind("<Button-1>", lambda e: cmd())
+            return lbl
+
+        if updater.is_git_clone(APP_DIR):
+            add_text(add_row("Install"), "git clone (update with git pull)")
+        else:
+            add_text(add_row("Install"), "downloaded copy (updates in the app)")
+        tk_ver = getattr(tk, "TkVersion", "")
+        add_text(add_row("Runtime"), f"Python {platform.python_version()}" + (f" \u00b7 Tk {tk_ver}" if tk_ver else ""))
+        cell = add_row("Settings")
+        add_text(cell, CONFIG_PATH.name + " \u00b7 ")
+        add_link(cell, "Open folder", lambda: open_folder(str(CONFIG_PATH.parent)))
+        add_link(add_row("Source"), updater.repo_url().replace("https://", ""),
+                 lambda: open_in_browser(updater.repo_url()))
+        state["about_status"] = add_text(add_row("Updates"), check_status_text() or "Not checked yet")
+
+        tk.Label(wrap, text="Free and open source (MIT). Unofficial: not affiliated with or endorsed by Anthropic.",
+                 font=f_small, fg=MUTED, bg=BG, justify="left", anchor="w", wraplength=360
+                 ).pack(anchor="w", pady=(8, 0))
+        row = tk.Frame(wrap, bg=BG)
+        row.pack(fill="x", pady=(14, 0))
+        mkbtn(row, "Copy version info", copy_version_info).pack(side="left")
+        mkbtn(row, "Check for updates", lambda: run_check(True)).pack(side="left", padx=(6, 0))
+        mkbtn(row, "Close", close_dialog).pack(side="right")
+
+    def open_version_menu(e=None):
+        m = tk.Menu(root, tearoff=0, bg=PANEL, fg=TEXT, activebackground=TRACK, activeforeground=TEXT,
+                    bd=0, relief="flat", font=f_small)
+        status = check_status_text()
+        hint = ("\u2713 " + status if status == "Up to date" else
+                "\u2191 " + vlabel(pending_update()) if pending_update() else status)
+        m.add_command(label="About this app", command=open_about)
+        m.add_command(label=f"What's new in {vlabel(__version__)}", command=open_whats_new)
+        m.add_command(label="Copy version info", command=copy_version_info)
+        m.add_command(label="Open release page", command=open_release_page, accelerator="GitHub")
+        m.add_separator()
+        m.add_command(label="Check for updates", command=lambda: run_check(True),
+                      **({"accelerator": hint} if hint else {}))
+        x, y = (e.x_root, e.y_root) if e is not None else (lbl_ver.winfo_rootx(), lbl_ver.winfo_rooty())
+        try:
+            m.tk_popup(x, y)
+        finally:
+            m.grab_release()
+
+    def open_whats_new():
+        """The notes for every release you're behind (with Update now), or, when you're up to
+        date, the latest entries of CHANGELOG.md."""
+        u = state["update"]
+        latest = pending_update()
+        update_mode = bool(latest and u["releases"])
+        made = make_dialog("What's new")
+        if made is None:
+            return
+        _win, wrap = made
+        entries = u["releases"] if update_mode else updater.read_changelog(APP_DIR, 3)
         tk.Label(wrap, text="What's new", font=f_title, fg=TEXT, bg=BG).pack(anchor="w")
-        tk.Label(wrap, text=f"You have v{__version__}. The latest is {vlabel(latest)}.",
+        tk.Label(wrap, text=(f"You have v{__version__}. The latest is {vlabel(latest)}." if update_mode
+                             else f"You're on v{__version__}. Recent changes:"),
                  font=f_small, fg=MUTED, bg=BG).pack(anchor="w", pady=(2, 10))
         box = tk.Text(wrap, width=58, height=16, wrap="word", bg=PANEL, fg=TEXT2, relief="flat",
                       bd=0, padx=10, pady=8, font=f_small, highlightthickness=1,
                       highlightbackground=BORDER, cursor="arrow")
         box.tag_configure("h", font=f_bold, foreground=TEXT)
         box.tag_configure("d", foreground=MUTED)
-        for r in u["releases"]:
+        for r in entries:
             box.insert("end", vlabel(r["tag"]), "h")
             box.insert("end", ("   " + r["date"] if r["date"] else "") + "\n", "d")
             box.insert("end", (r["notes"] or "No notes for this release.") + "\n\n")
+        if not entries:
+            box.insert("end", "No release notes found here. Use Open release page for the notes on GitHub.")
         box.config(state="disabled")
         box.pack(fill="both", expand=True)
         msg = tk.Label(wrap, text="", font=f_small, fg=MUTED, bg=BG, justify="left", anchor="w",
@@ -915,6 +1078,10 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
         msg.pack(fill="x", pady=(8, 0))
         row = tk.Frame(wrap, bg=BG)
         row.pack(fill="x", pady=(8, 0))
+        if not update_mode:
+            mkbtn(row, "Close", close_dialog).pack(side="right")
+            mkbtn(row, "Open release page", open_release_page).pack(side="right", padx=(0, 6))
+            return
         git_clone = updater.is_git_clone(APP_DIR)
         btns = []
 

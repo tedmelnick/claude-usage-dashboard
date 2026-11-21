@@ -6,6 +6,7 @@ tests can stand in for GitHub. Nothing here imports tkinter.
 import filecmp
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -91,6 +92,50 @@ def summarize(releases):
 
 def is_git_clone(app_dir):
     return (Path(app_dir) / ".git").exists()
+
+
+# ---- the version menu ----
+
+def repo_url():
+    return "https://github.com/%s" % REPO
+
+
+def release_url(version):
+    """The GitHub page of one release ('2.3.0' or 'v2.3.0'); the releases list if it isn't a version."""
+    text = str(version or "").strip()
+    if parse_version(text) is None:
+        return repo_url() + "/releases"
+    return "%s/releases/tag/v%s" % (repo_url(), text.lstrip("v"))
+
+
+def read_changelog(app_dir, limit=3):
+    """The newest `limit` entries of CHANGELOG.md, in the same shape as summarize(); [] if unreadable."""
+    try:
+        text = (Path(app_dir) / "CHANGELOG.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    sections, cur = [], None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            name = line[3:].strip()
+            cur = {"tag": "v" + name.lstrip("v"), "lines": []} if parse_version(name) else None
+            if cur is not None:
+                sections.append(cur)
+        elif cur is not None:
+            cur["lines"].append(line)
+    return [{"tag": c["tag"], "date": "", "notes": clean_notes("\n".join(c["lines"]))}
+            for c in sections[:limit]]
+
+
+def version_info(app_dir, tk_version=None, status=None):
+    """A few plain lines to paste into a bug report. No paths or account details."""
+    lines = ["Claude Usage Dashboard v%s" % __version__,
+             "Install: %s" % ("git clone" if is_git_clone(app_dir) else "downloaded copy"),
+             "Python %s%s" % (platform.python_version(), " (Tk %s)" % tk_version if tk_version else ""),
+             "OS: %s" % platform.platform()]
+    if status:
+        lines.append("Updates: %s" % status)
+    return "\n".join(lines)
 
 
 # ---- asking GitHub ----

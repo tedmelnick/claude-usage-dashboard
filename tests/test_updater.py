@@ -251,3 +251,49 @@ def test_git_clone_is_not_overwritten(tmp_path):
     with pytest.raises(updater.UpdateError, match="git"):
         updater.update_to("v2.2.0", app, zip_opener(tmp_path / "never-read.zip"))
     assert (app / "usage_dashboard" / "gui.py").read_text() == "NEW = False\n"
+
+
+# ---- the version menu ----
+
+def test_release_url():
+    base = "https://github.com/tedmelnick/claude-usage-dashboard"
+    assert updater.release_url("2.3.0") == base + "/releases/tag/v2.3.0"
+    assert updater.release_url("v2.3.0") == base + "/releases/tag/v2.3.0"
+    assert updater.release_url("main; rm -rf") == base + "/releases"
+    assert updater.release_url(None) == base + "/releases"
+    assert updater.repo_url() == base
+
+
+def test_read_changelog(tmp_path):
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## Unreleased\n- not shipped\n\n## 2.3.0\nFeatures\n- one **big** thing\n\n"
+        "## 2.2.0\nFixes\n- two\n\n## 2.1.0\n- three\n", encoding="utf-8")
+    got = updater.read_changelog(tmp_path, 2)
+    assert [g["tag"] for g in got] == ["v2.3.0", "v2.2.0"]
+    assert got[0]["notes"] == "Features\n• one big thing"
+    assert "not shipped" not in got[0]["notes"]
+    assert updater.read_changelog(tmp_path / "missing") == []
+
+
+def test_read_changelog_of_this_repo_starts_with_the_running_version():
+    root = Path(__file__).resolve().parent.parent
+    got = updater.read_changelog(root, 3)
+    assert got and got[0]["tag"] == "v" + usage_dashboard.__version__ and got[0]["notes"]
+
+
+def test_version_info(tmp_path):
+    text = updater.version_info(tmp_path, tk_version=9.0, status="up to date")
+    lines = text.split("\n")
+    assert lines[0] == "Claude Usage Dashboard v" + usage_dashboard.__version__
+    assert "Install: downloaded copy" in lines
+    assert any(l.startswith("Python ") and "(Tk 9.0)" in l for l in lines)
+    assert "Updates: up to date" in lines
+    assert str(tmp_path) not in text                     # no local paths in a bug report
+    (tmp_path / ".git").mkdir()
+    assert "Install: git clone" in updater.version_info(tmp_path).split("\n")
+
+
+def test_release_date_is_a_real_date():
+    from datetime import datetime
+    d = datetime.fromisoformat(usage_dashboard.__released__)
+    assert d.tzinfo is not None   # a time zone is needed, so every PC shows the same moment

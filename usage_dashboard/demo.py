@@ -58,8 +58,8 @@ def demo_trend(weeks=8):
 def demo_releases():
     """Pretend newer releases, for previewing the update button (--demo-update)."""
     return [
-        {"tag": "v2.3.0", "date": "2026-11-28",
+        {"tag": "v2.4.0", "date": "2026-11-28",
          "notes": "New\n• A made-up feature, shown only in this preview\n• Another made-up change"},
-        {"tag": "v2.2.1", "date": "2026-11-24",
+        {"tag": "v2.3.1", "date": "2026-11-24",
          "notes": "Fixes\n• A made-up fix, shown only in this preview"},
     ]

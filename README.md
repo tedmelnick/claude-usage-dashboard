@@ -43,13 +43,14 @@ The dashboard sends a desktop notification, and shows a strip at the top of the 
 Each alert fires once. The first reading after you start the app is only a baseline, so opening it at 85% doesn't announce 80%. Run `Test alert.bat` to check that notifications reach you. If they don't, Windows Focus Assist / Do Not Disturb may be hiding them; the strip in the window still shows. Set `alerts_enabled` to `false` to turn all of this off, or `alert_sound` to `true` to add the system sound on Windows.
 
 ## Updates
-The version you're running (for example `v2.2.0`) is shown next to the title, in both the full and compact views.
+The version you're running (for example `v2.3.0`) is shown next to the title, in both the full and compact views.
 
-- A small **green check** after it means you're on the latest release. **Click the version** to check GitHub right away.
-- When a newer release is published, the check turns into a blue pill such as `↑ v2.3.0`. Click it to read the release notes for every version you're behind.
-- Then choose **Update now**, **Later**, or **Skip this version** (clicking the version again brings a skipped update back).
+- A small **green check** after it means you're on the latest release.
+- **Click the version** for a menu: **About this app**, **What's new** (the recent changelog entries), **Copy version info** (version, install type, Python and OS, for a bug report), **Open release page** and **Check for updates** (asks GitHub right away).
+- When a newer release is published, the check turns into a blue pill such as `↑ v2.4.0`. Click it to read the release notes for every version you're behind.
+- Then choose **Update now**, **Later**, or **Skip this version** (**Check for updates** in the version menu brings a skipped update back).
 - **Update now** downloads that release from GitHub, replaces the app's files, keeps your `config.json` and `usage_history.db`, and restarts the dashboard. The files it replaced are saved in `_backup_before_update\v<old version>`, and if anything fails they are put back. Nothing is ever installed without you pressing the button.
-- The app checks when it starts and every 6 hours. Set `check_for_updates` to `false` to turn that off (clicking the version still checks).
+- The app checks when it starts and every 6 hours. Set `check_for_updates` to `false` to turn that off (**Check for updates** still checks).
 - If the folder is a git clone (it has a `.git` folder), the app only tells you about updates; use `git pull` to install them.
 - Updates come from published GitHub releases, not from every commit. Pre-releases and drafts are ignored.
 - `Preview update.bat` (or `python claude_usage_dashboard.py --demo-update`) shows the pill and the What's new window with made-up releases, and installs nothing.
@@ -65,6 +66,8 @@ The version you're running (for example `v2.2.0`) is shown next to the title, in
 - `assets/`: the app icon (`icon.ico`, `icon.png`, and the SVG sources).
 - `Preview (demo).bat`: runs with fake data. `python claude_usage_dashboard.py --demo --stale` previews the stale warning.
 - `Preview update.bat`: previews the update button with made-up releases.
+- `Install hook.bat` (maintainers, once): makes every `git commit` in your clone stamp the release time shown in About, so nothing needs editing by hand.
+- `Release.bat` (maintainers): sets the release time shown in About, runs the tests, then commits and pushes. Publishing the release (tag `vX.Y.Z`) is still done on github.com.
 - `Debug dump.bat`: writes the raw reply to `dump.json`. Use it if bars are missing or wrong.
 - `Test alert.bat`: sends a test notification.
 - `config.json`: created on first close. See below.

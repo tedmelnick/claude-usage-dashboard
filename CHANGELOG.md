@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.3.0
+Features
+- Clicking the version next to the title now opens a menu: About this app, What's new, Copy version info, Open release page and Check for updates.
+- About this app: what the dashboard is, its version, whether you're running a git clone or a downloaded copy, and a link to the GitHub page.
+- What's new: the recent entries of this changelog when you're up to date. When a newer release is waiting, the blue pill still opens the release notes with Update now, Later and Skip this version.
+- Copy version info puts the version, install type, Python and OS on the clipboard for a bug report (no file paths or account details).
+- Open release page opens this version's page on GitHub.
+- Check for updates does what clicking the version used to do. The small check or blue pill next to the version works as before.
+
+Other
+- `--demo-update` now pretends v2.4.0 and v2.3.1 are out.
+
 ## 2.2.0
 Features
 - The window shows which version you're running, next to the title (full and compact views).
