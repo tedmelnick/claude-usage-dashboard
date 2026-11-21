@@ -2,10 +2,8 @@
 
 An always-on-top window (for a second monitor) that shows how much of your Claude plan you've used, when each limit resets, and whether you're on pace to run out. Dark or light, optionally see-through, with a compact view.
 
-<!-- Uncomment once screenshots are saved in docs/ (see docs/README.md)
 ![Dark theme](docs/screenshot-dark.png)
 ![Light theme](docs/screenshot-light.png)
--->
 
 Unofficial project. Not affiliated with or endorsed by Anthropic.
 

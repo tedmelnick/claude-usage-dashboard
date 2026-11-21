@@ -35,7 +35,7 @@ def demo_history(days=7):
     by_project = {
         "claude-usage-dashboard": {"opus": [int(9e6 * scale), 0, 0, 0], "sonnet": [int(4e6 * scale), 0, 0, 0]},
         "mobile-app": {"sonnet": [int(7e6 * scale), 0, 0, 0]},
-        "webapp": {"opus": [int(3.5e6 * scale), 0, 0, 0], "fable": [int(1.2e6 * scale), 0, 0, 0]},
+        "data-pipeline": {"opus": [int(3.5e6 * scale), 0, 0, 0], "fable": [int(1.2e6 * scale), 0, 0, 0]},
         "blog-engine": {"sonnet": [int(2.1e6 * scale), 0, 0, 0]},
         "scratch": {"haiku": [int(0.6e6 * scale), 0, 0, 0]},
     }
