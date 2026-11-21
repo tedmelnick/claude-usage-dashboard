@@ -150,5 +150,8 @@ python -m pytest
 ```
 The tests cover the parsing and projection maths, history scanning, alerts, backoff, the API error handling, the update check and installer (against a stand-in for GitHub, including a failed install rolling back), and a smoke test that runs the whole window against a stand-in for tkinter. GitHub Actions runs them on Windows and Linux for every push.
 
+## Enjoying it?
+If the dashboard is useful to you, please star the repo on GitHub (the Star button at the top right of the page). It is the only way I can tell that anyone is using it, since the app sends no usage data anywhere.
+
 ## License
 MIT. See `LICENSE`.
