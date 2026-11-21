@@ -432,7 +432,7 @@ def test_extras_off_ignores_everything(fake_tk, tmp_path):
     assert gui.BG == before and "Stats" not in label_texts()
 
 
-def test_seven_clicks_on_the_version_open_the_developer_panel(fake_tk):
+def test_seven_clicks_on_the_version_reveal_the_developer_section_in_about(fake_tk):
     root = start()
     pump(root)
     from usage_dashboard import eggs
@@ -448,7 +448,7 @@ def test_seven_clicks_on_the_version_open_the_developer_panel(fake_tk):
         click(types.SimpleNamespace())
     pump(root, 0)
     texts = label_texts()
-    assert "Developer" in texts and "Secrets found" in texts
+    assert "Developer panel" in texts and "Secrets found" in texts and "Version" in " ".join(texts)
     assert f"0 of {len(eggs.ALL_IDS)}" not in texts    # opening the panel is itself a find
 
 

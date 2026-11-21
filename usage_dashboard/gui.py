@@ -956,10 +956,11 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
     attach_tip(lbl_ind, lambda: (f"{vlabel(pending_update())} is available. Click to see what's new"
                                  if state["pill"] else "You're up to date. Click to check again"))
 
-    dlg = {"w": None}
+    dlg = {"w": None, "reveal": None}
 
     def close_dialog():
         state["about_status"] = None
+        dlg["reveal"] = None
         if dlg["w"] is not None:
             try:
                 dlg["w"].destroy()
@@ -1116,6 +1117,35 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
         mkbtn(row, "Copy version info", copy_version_info).pack(side="left")
         mkbtn(row, "Check for updates", lambda: run_check(True)).pack(side="left", padx=(6, 0))
         mkbtn(row, "Close", close_dialog).pack(side="right")
+
+        shown = {"dev": False}
+
+        def reveal_dev():
+            """The hidden developer section grows out of this same window, above the buttons."""
+            if shown["dev"]:
+                return
+            shown["dev"] = True
+            found("dev")
+            stats = history_stats()
+            box = tk.Frame(wrap, bg=BG)
+            box.pack(fill="x", pady=(12, 0), before=row)
+            tk.Label(box, text=egg["quips"].get("developer", "You're now a developer"), font=f_small,
+                     fg=BANNER_FG, bg=BANNER_BG, padx=10, pady=6, anchor="w", justify="left"
+                     ).pack(fill="x")
+            tk.Label(box, text="Developer panel", font=f_bold, fg=MUTED, bg=BG).pack(anchor="w", pady=(10, 0))
+            info_rows(box, [
+                ("Build time", released_text() or "unknown"),
+                ("Commit", eggs.commit_hash(APP_DIR) or "not a git clone"),
+                ("Data folder", str(APP_DIR)),
+                ("History rows", str(stats.get("rows", 0))),
+                ("Secrets found", f"{egg['store'].found_count()} of {len(eggs.ALL_IDS)}"),
+            ])
+            btns = tk.Frame(box, bg=BG)
+            btns.pack(fill="x", pady=(10, 0))
+            mkbtn(btns, "Open stats", lambda: (close_dialog(), open_stats())).pack(side="left")
+            mkbtn(btns, "Open data folder", lambda: open_folder(str(APP_DIR))).pack(side="left", padx=(6, 0))
+
+        dlg["reveal"] = reveal_dev
 
     def open_version_menu(e=None):
         m = tk.Menu(root, tearoff=0, bg=PANEL, fg=TEXT, activebackground=TRACK, activeforeground=TEXT,
@@ -1447,32 +1477,9 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
                      fg=MUTED, bg=BG).pack(anchor="w", pady=(8, 0))
         mkbtn(wrap, "Close", close_dialog).pack(anchor="e", pady=(14, 0))
 
-    def open_dev_panel():
-        close_dialog()
-        made = make_dialog("Developer")
-        if made is None:
-            return
-        _win, wrap = made
-        found("dev")
-        stats = history_stats()
-        tk.Label(wrap, text="Developer", font=f_title, fg=TEXT, bg=BG).pack(anchor="w")
-        info_rows(wrap, [
-            ("Build time", released_text() or "unknown"),
-            ("Commit", eggs.commit_hash(APP_DIR) or "not a git clone"),
-            ("Data folder", str(APP_DIR)),
-            ("History rows", str(stats.get("rows", 0))),
-            ("Secrets found", f"{egg['store'].found_count()} of {len(eggs.ALL_IDS)}"),
-        ])
-        row = tk.Frame(wrap, bg=BG)
-        row.pack(fill="x", pady=(14, 0))
-        mkbtn(row, "Open stats", lambda: (close_dialog(), open_stats())).pack(side="left")
-        mkbtn(row, "Open data folder", lambda: open_folder(str(APP_DIR))).pack(side="left", padx=(6, 0))
-        mkbtn(row, "Close", close_dialog).pack(side="right")
-
     def ver_clicked():
-        if extras_on() and version_clicks.hit():
-            toast(egg["quips"].get("developer", "You're now a developer"))
-            root.after(1300, open_dev_panel)
+        if extras_on() and version_clicks.hit() and dlg["reveal"] is not None:
+            dlg["reveal"]()
 
     def on_key(e):
         try:

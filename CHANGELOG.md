@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.1
+Fixes
+- Small fixes to the About window.
+
 ## 2.4.0
 Features
 - Seasonal touches: on public holidays and a few observances the window gets a thin colored ring, a strip under the title and a small badge. The red, amber and green status colors never change.
