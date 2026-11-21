@@ -8,8 +8,11 @@ Unofficial project. Not affiliated with or endorsed by Anthropic.
 - Windows, with Python 3 and tkinter (the python.org installer includes both).
 - [Claude Code](https://code.claude.com) installed and signed in once with your claude.ai account (Pro, Max, Team or seat-based Enterprise). The dashboard reads the sign-in Claude Code saves. It does not work with API-key or Console-only logins, or on the Free plan.
 
+## Setup
+Download the latest release (or clone the repo), then double-click `Setup.bat` once. It checks for Python and tkinter (installing Python with winget if missing), checks for Claude Code and its sign-in, and puts a "Claude Usage Dashboard" shortcut on your desktop. If it installs Python, run it a second time afterwards.
+
 ## Run
-Download the latest release (or clone the repo), then double-click `Start Claude Usage.bat`. Or run `pythonw claude_usage_dashboard.py`.
+Double-click the desktop shortcut or `Start Claude Usage.bat`. Or run `pythonw claude_usage_dashboard.py`.
 
 ## What it shows
 - Plan limits: current session, weekly all models, and a weekly bar for every model your account reports.
@@ -22,6 +25,7 @@ Download the latest release (or clone the repo), then double-click `Start Claude
 Updates every 60 seconds. If an update fails, or 5 minutes pass with no success, the status dot turns amber and a banner explains why.
 
 ## Files
+- `Setup.bat`: one-time setup (Python check, Claude Code check, desktop shortcut).
 - `Preview (demo).bat`: runs with fake data. `python claude_usage_dashboard.py --demo --stale` previews the stale warning.
 - `Debug dump.bat`: writes the raw reply to `dump.json`. Use it if bars are missing or wrong.
 - `config.json`: created on first close. Holds theme, window mode, clock, refresh interval, the folder for the Open button (`open_folder`, defaults to your home folder), `auto_refresh_token`, and `prices_per_mtok` for an optional cost estimate.
