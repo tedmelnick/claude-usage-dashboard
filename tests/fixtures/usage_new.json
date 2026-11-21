@@ -1,0 +1,16 @@
+{
+  "limits": [
+    {"kind": "session", "percent": 42, "resets_at": "2026-11-20T18:00:00Z"},
+    {"kind": "weekly_all", "percent": 68, "resets_at": "2026-11-25T05:00:00Z"},
+    {"kind": "weekly_scoped", "percent": 12, "resets_at": "2026-11-25T05:00:00Z",
+     "scope": {"model": {"display_name": "Fable"}}},
+    {"kind": "weekly_scoped", "percent": 55, "resets_at": "2026-11-25T05:00:00Z",
+     "scope": {"model": {"display_name": "Sonnet"}}},
+    {"kind": "weekly_scoped", "percent": null, "resets_at": null}
+  ],
+  "seven_day_breakdown": {"rows": [
+    {"key": "chat", "display_name": "Chats", "percent": 10, "percent_of_limit": 7},
+    {"key": "cowork", "display_name": "Cowork", "percent": 60, "percent_of_limit": 41},
+    {"key": "claude_code", "display_name": "Claude Code", "percent": 0, "percent_of_limit": 0}
+  ]}
+}

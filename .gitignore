@@ -1,6 +1,9 @@
 config.json
 config_*.json
 dump.json
+usage_history.db
+usage_history.db-journal
 __pycache__/
 *.pyc
 *_before-*.py
+.pytest_cache/
