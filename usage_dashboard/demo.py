@@ -3,10 +3,10 @@ import time
 from datetime import date, timedelta
 
 
-def demo_usage(now):
+def demo_usage(now, session=42, weekly=68):
     return {"limits": [
-        {"kind": "session", "percent": 42, "resets_at": (now + timedelta(minutes=157)).isoformat()},
-        {"kind": "weekly_all", "percent": 68, "resets_at": (now + timedelta(hours=107)).isoformat()},
+        {"kind": "session", "percent": session, "resets_at": (now + timedelta(minutes=157)).isoformat()},
+        {"kind": "weekly_all", "percent": weekly, "resets_at": (now + timedelta(hours=107)).isoformat()},
         {"kind": "weekly_scoped", "percent": 55, "resets_at": (now + timedelta(hours=107)).isoformat(),
          "scope": {"model": {"display_name": "Sonnet"}}},
         {"kind": "weekly_scoped", "percent": 31, "resets_at": (now + timedelta(hours=107)).isoformat(),
@@ -58,8 +58,20 @@ def demo_trend(weeks=8):
 def demo_releases():
     """Pretend newer releases, for previewing the update button (--demo-update)."""
     return [
-        {"tag": "v2.4.0", "date": "2026-11-28",
+        {"tag": "v2.5.0", "date": "2026-11-28",
          "notes": "New\n• A made-up feature, shown only in this preview\n• Another made-up change"},
-        {"tag": "v2.3.1", "date": "2026-11-24",
+        {"tag": "v2.4.1", "date": "2026-11-24",
          "notes": "Fixes\n• A made-up fix, shown only in this preview"},
     ]
+
+
+# --demo-eggs walks the session bar through these readings, one per poll, so the number
+# rules can be watched without waiting for real usage.
+DEMO_EGG_SESSION = [20, 24, 28, 32, 36, 41, 30, 35, 40, 45, 47, 42, 49, 52, 69, 80, 90, 12]
+
+
+def demo_stats():
+    return {"rows": 400, "first_day": "2026-09-14", "longest_streak": 23, "current_streak": 6,
+            "busiest": {"day": "2026-10-27", "points": 31.0},
+            "top_source": {"name": "Cowork", "points": 412.0},
+            "top_project": {"name": "claude-usage-dashboard", "tokens": 48_500_000}}

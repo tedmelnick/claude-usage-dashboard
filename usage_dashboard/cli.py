@@ -16,5 +16,5 @@ def main(argv=None):
         return
     from .gui import run_gui
     demo_update = "--demo-update" in argv   # fake demo data plus a pretend newer release
-    run_gui(demo="--demo" in argv or demo_update, dump="--dump" in argv, stale="--stale" in argv,
+    run_gui(demo="--demo" in argv or demo_update or "--demo-eggs" in argv, dump="--dump" in argv, stale="--stale" in argv,
             demo_update=demo_update, argv=argv)

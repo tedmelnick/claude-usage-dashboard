@@ -3,7 +3,7 @@ import os
 import re
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from .api import claude_config_dirs
 from .core import parse_ts
@@ -72,7 +72,8 @@ def scan_history(dirs, cache, days=7, now=None):
     (they're huge and cheap), used only for the optional cost estimate.
 
     Returns {"days": [iso dates], "by_day": {date: {family: [in,out,cw,cr]}},
-             "by_project": {name: {family: [in,out,cw,cr]}}}.
+             "by_project": {name: {family: [in,out,cw,cr]}},
+             "by_project_day": {date: {name: {family: [in,out,cw,cr]}}}}.
     """
     now = now or datetime.now()
     today = now.date()
@@ -81,6 +82,7 @@ def scan_history(dirs, cache, days=7, now=None):
     seen = set()
     by_day = {d.isoformat(): {} for d in day_list}
     by_project = {}
+    by_project_day = {}
     for base in dirs:
         for root, _dirs, files in os.walk(base):
             for fn in files:
@@ -110,14 +112,15 @@ def scan_history(dirs, cache, days=7, now=None):
                     slot = by_day.get(d)
                     if slot is None:
                         continue
-                    for bucket in (slot, by_project.setdefault(proj, {})):
+                    pday = by_project_day.setdefault(d, {}).setdefault(proj, {})
+                    for bucket in (slot, by_project.setdefault(proj, {}), pday):
                         t = bucket.setdefault(fam, [0, 0, 0, 0])
                         t[0] += i
                         t[1] += o
                         t[2] += cw
                         t[3] += cr
     return {"days": [d.isoformat() for d in day_list], "by_day": by_day,
-            "by_project": by_project}
+            "by_project": by_project, "by_project_day": by_project_day}
 
 
 def history_tokens(slot_fam):
@@ -170,6 +173,13 @@ class SnapshotStore:
             "pct REAL NOT NULL, resets_at INTEGER)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS snap_key_ts ON snapshots (key, ts)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS snap_kind ON snapshots (kind, resets_at)")
+        # Added in 2.4.0: what each source and project used, so the stats page can add it up.
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS source_peaks (week INTEGER NOT NULL, key TEXT NOT NULL, "
+            "name TEXT, pct REAL NOT NULL, PRIMARY KEY (week, key))")
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS project_days (day TEXT NOT NULL, name TEXT NOT NULL, "
+            "tokens INTEGER NOT NULL, PRIMARY KEY (day, name))")
         self.conn.commit()
         self._last = {}
         self.prune(keep_days)
@@ -200,6 +210,34 @@ class SnapshotStore:
             self.conn.commit()
         return wrote
 
+    def record_sources(self, rows, resets_at, now_ts=None):
+        """Keep the highest share each source reached in this week's window (rows come from
+        core.parse_breakdown, resets_at is the weekly reset as a datetime)."""
+        if resets_at is None or not rows:
+            return
+        week = int(round(resets_at.timestamp() / 3600.0))
+        for r in rows:
+            self.conn.execute(
+                "INSERT INTO source_peaks (week, key, name, pct) VALUES (?,?,?,?) "
+                "ON CONFLICT(week, key) DO UPDATE SET pct = MAX(pct, excluded.pct), name = excluded.name",
+                (week, r["key"], r["name"], float(r["pct"])))
+        self.conn.commit()
+
+    def record_projects(self, by_project_day):
+        """Save each day's tokens per project (the latest scan of a day replaces the old one)."""
+        n = 0
+        for day, projects in (by_project_day or {}).items():
+            for name, slot in projects.items():
+                tokens = slot_tokens(slot)
+                if tokens <= 0:
+                    continue
+                self.conn.execute(
+                    "INSERT INTO project_days (day, name, tokens) VALUES (?,?,?) "
+                    "ON CONFLICT(day, name) DO UPDATE SET tokens = excluded.tokens", (day, name, tokens))
+                n += 1
+        if n:
+            self.conn.commit()
+
     def window_peaks(self, kind="weekly_all", count=8, now_ts=None):
         """Highest percentage reached in each of the last `count` windows, oldest first.
 
@@ -222,3 +260,69 @@ class SnapshotStore:
             self.conn.close()
         except sqlite3.Error:
             pass
+
+
+# ---- numbers for the stats page (read-only, safe to call from the window thread) ----
+
+def read_stats(path, now=None):
+    """Totals over the whole saved history: busiest day, streaks, top source and project.
+
+    A day "stays under" when neither the session nor the weekly (all models) limit reached
+    100% that day. Days with no saved readings are skipped, they neither count nor break a
+    streak. Returns {"rows": 0} when there is nothing saved. "all-time" means since the
+    history database began.
+    """
+    now = now or datetime.now()
+    out = {"rows": 0}
+    if not os.path.exists(str(path)):
+        return out      # connecting would create an empty database
+    try:
+        conn = sqlite3.connect(str(path))
+    except sqlite3.Error:
+        return out
+    try:
+        out["rows"] = conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]
+        if not out["rows"]:
+            return out
+        peaks = {}
+        for day, pk in conn.execute(
+                "SELECT date(ts, 'unixepoch', 'localtime'), MAX(pct) FROM snapshots "
+                "WHERE kind IN ('session', 'weekly_all') GROUP BY 1 ORDER BY 1"):
+            peaks[day] = pk
+        out["first_day"] = conn.execute(
+            "SELECT date(MIN(ts), 'unixepoch', 'localtime') FROM snapshots").fetchone()[0]
+        longest = run = 0
+        for day in sorted(peaks):
+            run = run + 1 if peaks[day] < 100 else 0
+            longest = max(longest, run)
+        days = sorted(peaks)
+        cur = run if days and (now.date() - date.fromisoformat(days[-1])).days <= 1 else 0
+        out["longest_streak"], out["current_streak"] = longest, cur
+        # busiest day: the most percentage points added to the weekly limit in one day
+        added, prev = {}, None
+        for ts, pct, resets in conn.execute(
+                "SELECT ts, pct, resets_at FROM snapshots WHERE kind = 'weekly_all' ORDER BY ts"):
+            win = round((resets or 0) / 3600.0)
+            if prev and prev[0] == win and pct > prev[1]:
+                day = datetime.fromtimestamp(ts).date().isoformat()
+                added[day] = added.get(day, 0.0) + (pct - prev[1])
+            prev = (win, pct)
+        if added:
+            day = max(added, key=added.get)
+            out["busiest"] = {"day": day, "points": added[day]}
+        try:
+            row = conn.execute("SELECT name, SUM(pct) FROM source_peaks GROUP BY key "
+                               "ORDER BY SUM(pct) DESC LIMIT 1").fetchone()
+            if row and row[1] > 0:
+                out["top_source"] = {"name": row[0], "points": row[1]}
+            row = conn.execute("SELECT name, SUM(tokens) FROM project_days GROUP BY name "
+                               "ORDER BY SUM(tokens) DESC LIMIT 1").fetchone()
+            if row and row[1] > 0:
+                out["top_project"] = {"name": row[0], "tokens": row[1]}
+        except sqlite3.Error:
+            pass   # a database from before 2.4.0 has no source or project tables yet
+    except sqlite3.Error:
+        return {"rows": 0}
+    finally:
+        conn.close()
+    return out

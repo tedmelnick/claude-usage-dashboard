@@ -40,7 +40,7 @@ Double-click the desktop shortcut or `Start Claude Usage.bat`. Or run `pythonw c
 - **Version and updates**: the version you're running sits next to the title, with a green check when you're up to date. See [Updates](#updates).
 - Buttons: Open folder, On top, Refresh, View (Full / Compact), Theme (dark / light), Window (Solid, See-through, No background), Clock (12 hr / 24 hr).
 
-Updates every 60 seconds. If an update fails, or 5 minutes pass with no success, the status dot turns amber and a banner explains why and when the next try is.
+Updates every 60 seconds (the wait stretches to 2 minutes while nothing changes, and goes back to 60 seconds as soon as a bar moves, you click the window, or a reset is near). If an update fails, or 5 minutes pass with no success, the status dot turns amber and a banner explains why and when the next try is.
 
 ### Compact view
 `View: Compact` shrinks the window to the session and weekly bars. A per-model bar appears only when that model is close to or over its limit.
@@ -96,6 +96,8 @@ Close the dashboard before editing, because closing it re-saves the settings.
 | Setting | Default | Meaning |
 |---|---|---|
 | `refresh_seconds` | 60 | Seconds between updates |
+| `refresh_max_seconds` | 120 | Longest wait while nothing changes. Same as `refresh_seconds` turns the stretching off |
+| `extras` | true | Seasonal accents and other small touches. `false` turns them all off |
 | `stale_after_seconds` | 300 | When the amber warning appears |
 | `user_agent` | `"auto"` | `"auto"` follows the installed Claude Code version. Anything else is sent as written |
 | `auto_refresh_token` | `false` | See the note below |

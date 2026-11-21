@@ -117,3 +117,18 @@ class TestNextDelay:
 
     def test_sign_in_problems_do_not_back_off(self):
         assert core.next_delay(60, 5, "auth") == 60
+
+
+class TestStretchDelay:
+    def test_grows_by_thirty_seconds_to_the_max(self):
+        from usage_dashboard.core import stretch_delay
+        assert [stretch_delay(60, 120, n) for n in range(5)] == [60, 90, 120, 120, 120]
+
+    def test_same_value_turns_it_off(self):
+        from usage_dashboard.core import stretch_delay
+        assert stretch_delay(60, 60, 5) == 60 and stretch_delay(60, 30, 5) == 60
+        assert stretch_delay(60, None, 5) == 60 and stretch_delay(60, "x", 5) == 60
+
+    def test_keeps_the_minimum_interval(self):
+        from usage_dashboard.core import stretch_delay
+        assert stretch_delay(5, 200, 0) == 15

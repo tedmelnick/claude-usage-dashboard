@@ -45,3 +45,13 @@ def test_trend_summary():
     peaks[1]["peak"] = 82
     assert trend_summary(peaks) == "This week 82%, level with last week's 82%"
     assert trend_summary([{"peak": 1, "current": False}, {"peak": 2, "current": False}]) == ""
+
+
+def test_new_settings_have_defaults_and_are_cleaned(tmp_path):
+    cfg = config.load_config(tmp_path / "missing.json")
+    assert cfg["refresh_max_seconds"] == 120 and cfg["extras"] is True and cfg["quiet_days"] is True
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"refresh_max_seconds": "soon"}))
+    assert config.load_config(p)["refresh_max_seconds"] == 120
+    p.write_text(json.dumps({"refresh_max_seconds": 3}))
+    assert config.load_config(p)["refresh_max_seconds"] == 15

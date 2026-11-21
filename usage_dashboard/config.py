@@ -17,6 +17,11 @@ HISTORY_DAY_CHOICES = (7, 14, 30)
 
 DEFAULT_CONFIG = {
     "refresh_seconds": 60,
+    # While nothing changes the wait grows by 30 seconds per reading (60, 90, 120) up to
+    # this many seconds, and drops back to refresh_seconds when a bar moves, on Refresh,
+    # on a click in the window, or when a reset is near. Same value as refresh_seconds
+    # turns it off.
+    "refresh_max_seconds": 120,
     "stale_after_seconds": 300,
     "always_on_top": True,
     "open_folder": str(Path.home()),
@@ -64,6 +69,10 @@ DEFAULT_CONFIG = {
     # button when one exists. Nothing is installed without you pressing Update now.
     "check_for_updates": True,
     "skipped_version": "",
+    # Small extras (seasonal accents, a few lines, things to find). false turns them all
+    # off; quiet_days false also turns off the days that are marked with a plain tribute.
+    "extras": True,
+    "quiet_days": True,
 }
 
 
@@ -75,6 +84,10 @@ def _clean(cfg):
         cfg["trend_weeks"] = max(2, min(12, int(cfg.get("trend_weeks", 8))))
     except (TypeError, ValueError):
         cfg["top_projects"], cfg["trend_weeks"] = 5, 8
+    try:
+        cfg["refresh_max_seconds"] = max(15, int(cfg.get("refresh_max_seconds", 120)))
+    except (TypeError, ValueError):
+        cfg["refresh_max_seconds"] = 120
     th = cfg.get("alert_thresholds")
     if not isinstance(th, list):
         th = DEFAULT_CONFIG["alert_thresholds"]

@@ -9,3 +9,5 @@ __pycache__/
 .pytest_cache/
 _backup_before_update/
 *.update-tmp
+found.json
+*_custom.json

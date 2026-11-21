@@ -10,20 +10,21 @@ import sys
 import threading
 import time
 import webbrowser
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import __released__, __version__
 from . import demo as demo_data
-from . import status_icon, taskbar, updater
+from . import config as config_mod
+from . import eggs, status_icon, taskbar, updater
 from .alerts import AlertTracker, notify
 from .api import UsageError, fetch_usage
 from .config import (APP_DIR, CONFIG_PATH, DUMP_PATH, HISTORY_DAY_CHOICES, HISTORY_DB_PATH, load_config,
                      save_config)
 from .core import (fmt_secs, fmt_tokens, next_delay, parse_breakdown, parse_limits,
-                   project, reply_problem, sub_text, verdict_text)
-from .history import (SnapshotStore, history_cost, history_dirs, history_tokens, scan_history,
-                      slot_tokens, top_projects)
+                   project, reply_problem, stretch_delay, sub_text, verdict_text)
+from .history import (SnapshotStore, history_cost, history_dirs, history_tokens, read_stats,
+                      scan_history, slot_tokens, top_projects)
 
 # Themes. The names below are module globals that apply_palette() swaps at run time;
 # the values here are the dark theme (the default).
@@ -44,6 +45,8 @@ BANNER_FG, BANNER_BG = "#FAC775", "#412402"
 PILL = ("#ffffff", "#2a63b0")   # (text, background) of the "update available" pill
 CHIP = {"ok": ("#C0DD97", "#173404"), "warn": ("#FAC775", "#412402"),
         "over": ("#F7C1C1", "#501313")}
+
+ACCENTS = {"BLUE": BLUE, "RED": RED, "AMBER": AMBER, "GREEN": GREEN, "TEAL": TEAL}
 
 PALETTES = {
     "dark": {
@@ -67,6 +70,16 @@ PALETTES = {
 }
 # "No background" makes this one colour see-through (Windows). It is a hair off the
 # theme's own background so the text edges blend into it.
+PALETTES["arcade"] = {
+    "BG": "#06061a", "PANEL": "#10102e", "TRACK": "#1b1b44", "BORDER": "#ff2bd6",
+    "TEXT": "#eaffff", "TEXT2": "#7df9ff", "MUTED": "#b388ff",
+    "BLUE": "#00e5ff", "RED": "#ff2b6b", "AMBER": "#ffd400", "GREEN": "#39ff14", "TEAL": "#00ffb3",
+    "BLUE_D": "#00424d", "RED_D": "#4d0a20", "AMBER_D": "#4d4000", "GREEN_D": "#0f4d06",
+    "BTN_BORDER": "#ff2bd6", "BANNER_FG": "#ffd400", "BANNER_BG": "#2b1a00",
+    "PILL": ("#06061a", "#00e5ff"),
+    "CHIP": {"ok": ("#39ff14", "#0f4d06"), "warn": ("#ffd400", "#4d4000"),
+             "over": ("#ff2b6b", "#4d0a20")},
+}
 TRANSPARENT_KEY = {"dark": "#010101", "light": "#fefefe"}
 IS_WINDOWS = sys.platform.startswith("win")
 # "No background" needs Windows' transparent-colour support.
@@ -92,9 +105,20 @@ SOURCE_COLORS = {
 def apply_palette(theme, mode):
     """Point the colour globals at the chosen theme. mode "none" uses the see-through key as BG."""
     pal = PALETTES.get(theme) or PALETTES["dark"]
+    globals().update(ACCENTS)   # the arcade theme recolours these, so put them back first
     globals().update(pal)
     if mode == "none":
         globals()["BG"] = TRANSPARENT_KEY.get(theme, TRANSPARENT_KEY["dark"])
+
+
+def readable_on(hex_color):
+    """Black or white text, whichever reads better on this colour."""
+    try:
+        h = hex_color.lstrip("#")
+        r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except (ValueError, AttributeError):
+        return "#000000"
+    return "#000000" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "#ffffff"
 
 
 def open_folder(path):
@@ -128,7 +152,10 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
     from tkinter import font as tkfont
 
     cfg = load_config()
-    if cfg.get("theme") not in PALETTES:
+    argv = list(argv or [])
+    demo_eggs = "--demo-eggs" in argv
+    demo = demo or demo_eggs
+    if cfg.get("theme") not in ("dark", "light"):
         cfg["theme"] = "dark"
     if cfg.get("window_mode") not in WINDOW_MODES:
         cfg["window_mode"] = "solid"
@@ -142,6 +169,17 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
                         "releases": [], "etag": None},
              "upd_msg": ("", 0.0, ""), "ind_key": "unset", "pill": False, "restart": False}
     cache = {}
+    stretch = {"n": 0, "sig": None, "last": 0.0}   # the refresh stretch (see core.stretch_delay)
+    egg_clock = {"offset": timedelta(0)}
+    for a in argv:   # --egg-date=2026-12-24T23:59:40 previews a date, with the clock running
+        if a.startswith("--egg-date="):
+            try:
+                egg_clock["offset"] = datetime.fromisoformat(a.split("=", 1)[1]) - datetime.now()
+            except ValueError:
+                pass
+
+    def egg_now():
+        return datetime.now() + egg_clock["offset"]
 
     # ---- worker thread ----
     def worker():
@@ -155,13 +193,31 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
                                bool(cfg.get("alert_on_reset", True)),
                                float(cfg.get("alert_reset_min_pct", 50)))
         failures = 0
+        demo_i = 0
+
+        def note_poll(items, now):
+            """Count readings that look the same; any change or a near reset starts over."""
+            sig = tuple((i["key"], i["pct"]) for i in items)
+            soon = any(i["resets_at"] is not None and 0 <= (i["resets_at"] - now).total_seconds() < 600
+                       for i in items)
+            stretch["n"] = 0 if (sig != stretch["sig"] or soon) else stretch["n"] + 1
+            stretch["sig"] = sig
+            stretch["last"] = time.time()
+
         while True:
             err_kind, retry_after = None, None
             try:
                 days = int(cfg.get("history_days", 7))
                 if demo:
                     now = datetime.now(timezone.utc)
-                    q.put(("usage", demo_data.demo_usage(now)))
+                    if demo_eggs:
+                        seq = demo_data.DEMO_EGG_SESSION
+                        data = demo_data.demo_usage(now, session=seq[demo_i % len(seq)])
+                        demo_i += 1
+                    else:
+                        data = demo_data.demo_usage(now)
+                    note_poll(parse_limits(data), now)
+                    q.put(("usage", data))
                     q.put(("history", demo_data.demo_history(days)))
                     q.put(("trend", demo_data.demo_trend(int(cfg.get("trend_weeks", 8)))))
                 else:
@@ -176,9 +232,13 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
                         failures = 0
                         q.put(("usage", data))
                         items = parse_limits(data)
+                        note_poll(items, datetime.now(timezone.utc))
                         if store is not None:
                             try:
                                 store.record(items)
+                                weekly = next((i for i in items if i["kind"] == "weekly_all"), None)
+                                if weekly is not None:
+                                    store.record_sources(parse_breakdown(data), weekly["resets_at"])
                                 q.put(("trend", store.window_peaks("weekly_all", int(cfg.get("trend_weeks", 8)))))
                             except Exception:
                                 pass
@@ -195,12 +255,19 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
                         err_kind = "error"
                         q.put(("error", UsageError(f"Unexpected error: {e}")))
                     try:
-                        q.put(("history", scan_history(history_dirs(), cache, days)))
+                        hist = scan_history(history_dirs(), cache, days)
+                        q.put(("history", hist))
+                        if store is not None:
+                            store.record_projects(hist.get("by_project_day"))
                     except Exception:
                         pass
             finally:
                 refresh = int(cfg.get("refresh_seconds", 60))
                 delay = next_delay(refresh, failures, err_kind or "error", retry_after)
+                if demo_eggs:
+                    delay = 4      # a quick preview of the sequence
+                elif not failures:
+                    delay = stretch_delay(refresh, cfg.get("refresh_max_seconds"), stretch["n"])
                 q.put(("retry", time.time() + delay if failures else None))
                 wake.wait(timeout=delay)
                 wake.clear()
@@ -261,6 +328,8 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
     lbl_ver = tk.Label(head, text="v" + __version__, font=f_small, fg=MUTED, bg=BG, cursor="hand2")
     lbl_ver.pack(side="left", padx=(8, 0), pady=(2, 0))
     lbl_ind = tk.Label(head, text="", font=f_small, fg=MUTED, bg=BG, cursor="hand2")
+    lbl_badge = tk.Label(head, text="", font=f_small, fg=TEXT, bg=BG, padx=7, pady=1)
+    lbl_streak = tk.Label(head, text="", font=f_small, fg=MUTED, bg=BG)
 
     def mkbtn(parent, text, cmd):
         b = tk.Button(parent, text=text, command=cmd, font=f_small, fg=TEXT, bg=BG,
@@ -289,6 +358,9 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
     dot_id = dot.create_oval(1, 1, 9, 9, fill=GREEN, outline="")
     lbl_upd = tk.Label(status, text="Starting…", font=f_small, fg=MUTED, bg=BG)
     lbl_upd.pack(side="left", padx=(6, 0))
+
+    strip = tk.Canvas(outer, height=4, bg=BG, highlightthickness=0)
+    lbl_line = tk.Label(outer, text="", font=f_small, fg=MUTED, bg=BG, anchor="w", justify="left")
 
     def layout_buttons():
         """Pack the buttons in order (rightmost first). Compact view keeps only Refresh and View."""
@@ -350,6 +422,7 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
             return
         now = datetime.now(timezone.utc)
         items = parse_limits(usage)
+        spooky = bool(egg["date"] and egg["date"]["labels"]) and jokes_ok()
         if not items:
             tk.Label(body, text="The usage reply had no limits. Run with --dump to inspect it.",
                      font=f_base, fg=MUTED, bg=BG, wraplength=360, justify="left").pack(anchor="w")
@@ -371,7 +444,11 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
             fr.pack(fill="x", pady=(0, 8 if compact else 10 if small else 14))
             row = tk.Frame(fr, bg=BG)
             row.pack(fill="x")
-            tk.Label(row, text=item["label"], font=f_base, fg=TEXT2, bg=BG).pack(side="left")
+            label = item["label"]
+            if spooky:
+                label = eggs.spooky_label(item, egg["texts"])
+                found("f13")
+            tk.Label(row, text=label, font=f_base, fg=TEXT2, bg=BG).pack(side="left")
             tk.Label(row, text=f"{pct:.0f}%", font=f_bold, fg=TEXT, bg=BG).pack(side="right")
             bar = Bar(fr)
             bar.pack(fill="x", pady=(5, 0))
@@ -418,9 +495,14 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
             for i, r in enumerate(rows):
                 tk.Label(grid, text=r["name"], font=f_small, fg=TEXT2, bg=BG, anchor="w",
                          width=13).grid(row=i, column=0, sticky="w", pady=3)
-                bar = Bar(grid)
-                bar.grid(row=i, column=1, sticky="ew", padx=8)
-                bar.set(r["pct"], 0, SOURCE_COLORS.get(r["key"], OTHER_COLOR), TRACK)
+                if round(r["pct"]) == 0 and jokes_ok():
+                    tk.Label(grid, text=egg["quips"].get("empty", ""), font=f_small, fg=MUTED, bg=BG,
+                             anchor="w").grid(row=i, column=1, sticky="ew", padx=8)
+                    found("empty")
+                else:
+                    bar = Bar(grid)
+                    bar.grid(row=i, column=1, sticky="ew", padx=8)
+                    bar.set(r["pct"], 0, SOURCE_COLORS.get(r["key"], OTHER_COLOR), TRACK)
                 tk.Label(grid, text=f"{r['pct']:.0f}%", font=f_bold, fg=TEXT, bg=BG,
                          anchor="e").grid(row=i, column=2, sticky="e")
 
@@ -613,6 +695,11 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
             w.configure(bg=BG)
         lbl_title.configure(fg=TEXT, bg=BG)
         lbl_ver.configure(fg=MUTED, bg=BG)
+        lbl_streak.configure(fg=MUTED, bg=BG)
+        strip.configure(bg=BG)
+        egg["accent"] = None     # colours changed: redraw the seasonal accent and the line
+        egg["line"] = None
+        tick_eggs()
         state["ind_key"] = "unset"   # colours changed: redraw the check or pill
         refresh_indicator()
         dot.configure(bg=BG)
@@ -634,7 +721,7 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
 
     def apply_window_mode():
         """Apply theme + window mode (solid / see-through / no background)."""
-        theme, mode = cfg["theme"], cfg["window_mode"]
+        theme, mode = ("arcade" if arcade_on() else cfg["theme"]), cfg["window_mode"]
         apply_palette(theme, mode)
         frameless = mode == "none"
         if bool(root.overrideredirect()) != frameless:
@@ -663,7 +750,7 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
             pass
         layout_buttons()
         root.update_idletasks()
-        set_titlebar(theme == "dark")
+        set_titlebar(theme != "light")
         restyle()
 
     def toggle_theme():
@@ -740,8 +827,8 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
         tag = str(tag or "")
         return tag if tag.startswith("v") else "v" + tag
 
-    def attach_tip(widget, get_text):
-        """A small hover tip under a widget."""
+    def attach_tip(widget, get_text, delay=500):
+        """A small hover tip under a widget (after `delay` milliseconds)."""
         tip = {"w": None, "job": None}
 
         def show():
@@ -758,7 +845,7 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
             tip["w"] = w
 
         def enter(_e):
-            tip["job"] = root.after(500, show)
+            tip["job"] = root.after(delay, show)
 
         def leave(_e):
             if tip["job"] is not None:
@@ -969,15 +1056,19 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
             img = tk.PhotoImage(file=str(APP_DIR / "assets" / "icon.png"))
             img = img.subsample(max(1, round(img.width() / 60)))
             dlg["icon"] = img   # tkinter drops an image nobody holds on to
-            tk.Label(top, image=img, bg=BG).pack(side="left", padx=(0, 14))
+            icon_lbl = tk.Label(top, image=img, bg=BG)
+            icon_lbl.pack(side="left", padx=(0, 14))
+            attach_tip(icon_lbl, about_quip, delay=3000)
         except Exception:
             pass
         head_txt = tk.Frame(top, bg=BG)
         head_txt.pack(side="left", anchor="w")
         tk.Label(head_txt, text="Claude Usage Dashboard", font=f_title, fg=TEXT, bg=BG).pack(anchor="w")
         when = released_text()
-        tk.Label(head_txt, text=f"Version {__version__}" + (f" \u00b7 released {when}" if when else ""),
-                 font=f_small, fg=MUTED, bg=BG).pack(anchor="w", pady=(2, 0))
+        ver_lbl = tk.Label(head_txt, text=f"Version {__version__}" + (f" \u00b7 released {when}" if when else ""),
+                           font=f_small, fg=MUTED, bg=BG)
+        ver_lbl.pack(anchor="w", pady=(2, 0))
+        ver_lbl.bind("<Button-1>", lambda e: ver_clicked())
 
         info = tk.Frame(wrap, bg=BG)
         info.pack(fill="x", pady=(14, 0))
@@ -1140,6 +1231,274 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
         state["restart"] = True
         root.after(900, on_close)
 
+    # ---- extras: seasonal accents, a few lines, things to find (logic lives in eggs.py) ----
+    folder = config_mod.CONFIG_PATH.parent
+    egg = {"texts": eggs._load("dates.json", {}), "quips": eggs.load_quips(folder),
+           "custom": eggs.load_custom(folder, "dates_custom.json"),
+           "store": eggs.EggStore(None if demo else folder / "found.json"),
+           "date": None, "flash": ("", 0.0), "last_quip": None, "accent": None, "line": None,
+           "strip": [], "streak_on": False, "spooky": None}
+    egg["watcher"] = eggs.NumberWatcher(egg["store"], daily_cap=not demo_eggs)
+    arcade = {"until": 0.0}
+    konami = eggs.SequenceMatcher(eggs.KEY_SEQUENCE)
+    typed = eggs.SequenceMatcher(list("stats"))
+    title_clicks = eggs.ClickCounter(5)
+    version_clicks = eggs.ClickCounter(7)
+
+    def extras_on():
+        d = egg["date"]
+        return bool(cfg.get("extras", True)) and not (d and d["quiet"])
+
+    def jokes_ok():
+        d = egg["date"]
+        return extras_on() and not (d and d["calm"])
+
+    def found(egg_id):
+        egg["store"].mark(egg_id)
+
+    def toast(text, ms=2600):
+        try:
+            w = tk.Toplevel(root)
+            w.overrideredirect(True)
+            w.attributes("-topmost", True)
+            w.geometry(f"+{root.winfo_x() + 30}+{root.winfo_y() + 70}")
+            tk.Label(w, text=text, font=f_bold, fg=TEXT, bg=PANEL, padx=14, pady=8,
+                     highlightthickness=1, highlightbackground=BORDER).pack()
+
+            def gone():
+                try:
+                    w.destroy()
+                except tk.TclError:
+                    pass
+            root.after(ms, gone)
+        except tk.TclError:
+            pass
+
+    def arcade_on():
+        return time.time() < arcade["until"]
+
+    def set_arcade_fonts(on):
+        fam = next((f for f in ("Consolas", "Courier New", "DejaVu Sans Mono") if f in families), face) if on else face
+        for f in (f_base, f_small, f_bold, f_title):
+            f.configure(family=fam)
+
+    def start_arcade():
+        arcade["until"] = time.time() + 60
+        found("konami")
+        set_arcade_fonts(True)
+        apply_window_mode()
+
+    def stop_arcade():
+        arcade["until"] = 0.0
+        set_arcade_fonts(False)
+        apply_window_mode()
+
+    def current_line():
+        """(text, colour) for the line under the title, '' when there is none."""
+        now = time.time()
+        d = egg["date"]
+        if arcade_on():
+            return f"{egg['quips'].get('arcade', 'Esc to exit')}  \u00b7  {int(arcade['until'] - now)}s", AMBER
+        if jokes_ok() and egg["flash"][1] > now:
+            return egg["flash"][0], TEXT
+        if d and d["line"] and (d["quiet"] or jokes_ok()):
+            found(d["line"][0])
+            return d["line"][1], (TEXT2 if d["quiet"] else MUTED)
+        return "", MUTED
+
+    def accent_spec():
+        d = egg["date"]
+        if not d or not cfg.get("extras", True):
+            return None
+        if d["quiet"]:
+            return ("quiet", None, ["#8a8a85"], "")
+        h, n = d["holiday"]
+        if h:
+            return (h["id"], h.get("ring"), list(h.get("strip") or []), eggs.badge_text(h, n), n)
+        return None
+
+    def draw_strip(_e=None):
+        strip.delete("all")
+        cols = egg["strip"]
+        w = max(strip.winfo_width(), 10)
+        for i, c in enumerate(cols):
+            strip.create_rectangle(w * i / len(cols), 0, w * (i + 1) / len(cols), 4, fill=c, outline="")
+
+    strip.bind("<Configure>", draw_strip)
+
+    def apply_accents():
+        spec = accent_spec()
+        key = (spec, BG)
+        if key == egg["accent"]:
+            return
+        egg["accent"] = key
+        ring, cols, badge = (spec[1], spec[2], spec[3]) if spec else (None, [], "")
+        outer.configure(highlightthickness=2 if ring else 0, highlightbackground=ring or BG,
+                        highlightcolor=ring or BG)
+        egg["strip"] = cols
+        if cols:
+            strip.configure(bg=BG)
+            strip.pack(fill="x", before=head, pady=(0, 10))
+            draw_strip()
+        else:
+            strip.pack_forget()
+        color = ring or (cols[0] if cols else BG)
+        if badge:
+            lbl_badge.config(text=badge, bg=color, fg=readable_on(color))
+            lbl_badge.pack(in_=head, side="left", padx=(8, 0), pady=(2, 0))
+        else:
+            lbl_badge.pack_forget()
+        if spec and spec[0] != "quiet":
+            found("season")
+
+    def tick_eggs():
+        """Once a second: today's date state, the accent, the line under the title."""
+        try:
+            if cfg.get("extras", True):
+                egg["date"] = eggs.date_state(egg_now(), egg["custom"], egg["texts"],
+                                              bool(cfg.get("quiet_days", True)))
+            else:
+                egg["date"] = {"line": None, "labels": False, "quiet": False, "calm": False,
+                               "holiday": (None, 0)}
+            if arcade["until"] and (not arcade_on() or not jokes_ok()):
+                stop_arcade()
+            apply_accents()
+            spooky = (bool(egg["date"]["labels"]) and jokes_ok(), jokes_ok())
+            if spooky != egg["spooky"]:
+                egg["spooky"] = spooky
+                render_limits()
+            line = current_line()
+            if line != egg["line"]:
+                egg["line"] = line
+                if line[0]:
+                    lbl_line.config(text=line[0], fg=line[1], bg=BG)
+                    if not lbl_line.winfo_ismapped():
+                        lbl_line.pack(fill="x", before=status, pady=(2, 0))
+                elif lbl_line.winfo_ismapped():
+                    lbl_line.pack_forget()
+            if egg["streak_on"] and not extras_on():
+                egg["streak_on"] = False
+                update_streak()
+        except Exception:
+            pass   # these are extras; never let one break the window
+
+    def feed_numbers(usage):
+        if (demo and not demo_eggs) or not jokes_ok():
+            return
+        now = egg_now()
+        for it in parse_limits(usage):
+            if it["kind"] not in eggs.BARS or it["resets_at"] is None:
+                continue
+            win = int(round(it["resets_at"].timestamp() / 3600))
+            nid = egg["watcher"].feed(it["kind"], it["pct"], win, now)
+            if nid:
+                egg["flash"] = (eggs.number_line(egg["quips"], nid), time.time() + 10)
+
+    def history_stats():
+        return demo_data.demo_stats() if demo else read_stats(HISTORY_DB_PATH)
+
+    def update_streak():
+        if egg["streak_on"] and extras_on():
+            lbl_streak.config(text=eggs.streak_text(history_stats(), egg["quips"]))
+            lbl_streak.pack(in_=head, side="left", padx=(8, 0), pady=(2, 0))
+            found("streak")
+        else:
+            lbl_streak.pack_forget()
+
+    def title_clicked(_e=None):
+        if extras_on() and title_clicks.hit():
+            egg["streak_on"] = not egg["streak_on"]
+            update_streak()
+
+    lbl_title.bind("<Button-1>", title_clicked, add="+")
+
+    def about_quip():
+        if not jokes_ok():
+            return ""
+        q = eggs.pick_quip(egg["quips"], egg["last_quip"])
+        egg["last_quip"] = q
+        found("hover")
+        return q
+
+    def info_rows(wrap, rows):
+        grid = tk.Frame(wrap, bg=BG)
+        grid.pack(fill="x", pady=(12, 0))
+        grid.columnconfigure(1, weight=1)
+        for i, (k, v) in enumerate(rows):
+            tk.Label(grid, text=k, font=f_small, fg=MUTED, bg=BG, anchor="w").grid(
+                row=i, column=0, sticky="nw", pady=3, padx=(0, 18))
+            tk.Label(grid, text=v, font=f_small, fg=TEXT, bg=BG, anchor="w", justify="left",
+                     wraplength=300).grid(row=i, column=1, sticky="nw", pady=3)
+
+    def open_stats():
+        made = make_dialog("Stats")
+        if made is None:
+            return
+        _win, wrap = made
+        found("stats")
+        tk.Label(wrap, text="Stats", font=f_title, fg=TEXT, bg=BG).pack(anchor="w")
+        rows = eggs.stats_rows(history_stats())
+        if rows:
+            info_rows(wrap, rows)
+            tk.Label(wrap, text="All-time means since this history database began.", font=f_small,
+                     fg=MUTED, bg=BG, wraplength=380, justify="left").pack(anchor="w", pady=(10, 0))
+        else:
+            tk.Label(wrap, text="Nothing saved yet. Come back after a few days of use.", font=f_small,
+                     fg=MUTED, bg=BG).pack(anchor="w", pady=(8, 0))
+        mkbtn(wrap, "Close", close_dialog).pack(anchor="e", pady=(14, 0))
+
+    def open_dev_panel():
+        close_dialog()
+        made = make_dialog("Developer")
+        if made is None:
+            return
+        _win, wrap = made
+        found("dev")
+        stats = history_stats()
+        tk.Label(wrap, text="Developer", font=f_title, fg=TEXT, bg=BG).pack(anchor="w")
+        info_rows(wrap, [
+            ("Build time", released_text() or "unknown"),
+            ("Commit", eggs.commit_hash(APP_DIR) or "not a git clone"),
+            ("Data folder", str(APP_DIR)),
+            ("History rows", str(stats.get("rows", 0))),
+            ("Secrets found", f"{egg['store'].found_count()} of {len(eggs.ALL_IDS)}"),
+        ])
+        row = tk.Frame(wrap, bg=BG)
+        row.pack(fill="x", pady=(14, 0))
+        mkbtn(row, "Open stats", lambda: (close_dialog(), open_stats())).pack(side="left")
+        mkbtn(row, "Open data folder", lambda: open_folder(str(APP_DIR))).pack(side="left", padx=(6, 0))
+        mkbtn(row, "Close", close_dialog).pack(side="right")
+
+    def ver_clicked():
+        if extras_on() and version_clicks.hit():
+            toast(egg["quips"].get("developer", "You're now a developer"))
+            root.after(1300, open_dev_panel)
+
+    def on_key(e):
+        try:
+            if e.keysym == "Escape" and arcade_on():
+                stop_arcade()
+                return
+            if not extras_on():
+                return
+            if konami.feed(e.keysym) and jokes_ok():
+                stop_arcade() if arcade_on() else start_arcade()
+            if typed.feed(e.keysym):
+                open_stats()
+        except Exception:
+            pass
+
+    def on_click_activity(_e=None):
+        """A click means somebody is looking: start the refresh stretch over, and refresh now
+        if the last good reading is older than the normal interval."""
+        stretch["n"] = 0
+        if (not demo and state["last_err"] is None
+                and time.time() - stretch["last"] >= int(cfg.get("refresh_seconds", 60))):
+            wake.set()
+
+    root.bind_all("<Key>", on_key, add="+")
+    root.bind_all("<ButtonPress-1>", on_click_activity, add="+")
+
     # ---- ui loop ----
     blink = {"on": False}
 
@@ -1179,6 +1538,7 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
         if state["alert"] and time.time() > state["alert_until"]:
             dismiss_alert()
         refresh_indicator()
+        tick_eggs()
         root.after(1000, tick_status)
 
     def toplevel_hwnd():
@@ -1213,6 +1573,7 @@ def run_gui(demo=False, dump=False, stale=False, demo_update=False, argv=None):
                 kind, payload = q.get_nowait()
                 if kind == "usage":
                     state["usage"] = payload
+                    feed_numbers(payload)
                     state["last_ok"] = time.time()
                     state["last_err"] = None
                     if demo and stale:  # preview the stale warning

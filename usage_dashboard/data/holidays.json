@@ -1,0 +1,228 @@
+{
+ "note": "Seasonal accents tint only the window ring, the title strip and a small badge; the red, amber and green status colours never change. Rules: fixed:MM-DD, range:MM-DD:MM-DD, nth:weekday:n:month[:days], last:weekday:month, easter, table:name:days (dates from 'tables', first day of the observance). The first match in this list wins. 'calm' turns the jokes off that day.",
+ "tables": {
+  "hanukkah": {
+   "2026": "12-04",
+   "2027": "12-24",
+   "2028": "12-12",
+   "2029": "12-01",
+   "2030": "12-20",
+   "2031": "12-09",
+   "2032": "11-27",
+   "2033": "12-16",
+   "2034": "12-06",
+   "2035": "12-25"
+  },
+  "lunar": {
+   "2026": "02-17",
+   "2027": "02-06",
+   "2028": "01-26",
+   "2029": "02-13",
+   "2030": "02-03",
+   "2031": "01-23",
+   "2032": "02-11",
+   "2033": "01-31",
+   "2034": "02-19",
+   "2035": "02-08"
+  },
+  "diwali": {
+   "2026": "11-08",
+   "2027": "10-29",
+   "2028": "10-17",
+   "2029": "11-05",
+   "2030": "10-26",
+   "2031": "11-14",
+   "2032": "11-02",
+   "2033": "10-22",
+   "2034": "11-10",
+   "2035": "10-30"
+  }
+ },
+ "holidays": [
+  {
+   "id": "ny",
+   "name": "New Year's Day",
+   "rule": "fixed:01-01",
+   "ring": "#D4AF37",
+   "strip": [
+    "#D4AF37"
+   ],
+   "badge": "New Year"
+  },
+  {
+   "id": "val",
+   "name": "Valentine's Day",
+   "rule": "fixed:02-14",
+   "ring": "#D4537E",
+   "strip": [
+    "#D4537E"
+   ],
+   "badge": "Valentine's"
+  },
+  {
+   "id": "stp",
+   "name": "St. Patrick's Day",
+   "rule": "fixed:03-17",
+   "ring": "#1D9E75",
+   "strip": [
+    "#1D9E75"
+   ],
+   "badge": "St. Patrick's"
+  },
+  {
+   "id": "easter",
+   "name": "Easter",
+   "rule": "easter",
+   "ring": "#B497D6",
+   "strip": [
+    "#F6E27F"
+   ],
+   "badge": "Easter"
+  },
+  {
+   "id": "earth",
+   "name": "Earth Day",
+   "rule": "fixed:04-22",
+   "ring": "#7BBF6A",
+   "strip": [
+    "#7BBF6A"
+   ],
+   "badge": "Earth Day"
+  },
+  {
+   "id": "ems",
+   "name": "EMS Week",
+   "rule": "nth:sun:3:may:7",
+   "ring": "#FFFFFF",
+   "strip": [
+    "#0072BB"
+   ],
+   "badge": "EMS Week"
+  },
+  {
+   "id": "mem",
+   "name": "Memorial Day",
+   "rule": "last:mon:may",
+   "ring": "#4A6FA5",
+   "strip": [
+    "#9B4A4A",
+    "#FFFFFF",
+    "#4A6FA5"
+   ],
+   "badge": "Memorial Day",
+   "calm": true
+  },
+  {
+   "id": "june",
+   "name": "Juneteenth",
+   "rule": "fixed:06-19",
+   "ring": null,
+   "strip": [
+    "#C0392B",
+    "#111111",
+    "#1D9E75"
+   ],
+   "badge": "Juneteenth"
+  },
+  {
+   "id": "jul4",
+   "name": "Independence Day",
+   "rule": "fixed:07-04",
+   "ring": "#378ADD",
+   "strip": [
+    "#E24B4A",
+    "#FFFFFF",
+    "#378ADD"
+   ],
+   "badge": "July 4"
+  },
+  {
+   "id": "vet",
+   "name": "Veterans Day",
+   "rule": "fixed:11-11",
+   "ring": "#4A6FA5",
+   "strip": [
+    "#9B4A4A",
+    "#FFFFFF",
+    "#4A6FA5"
+   ],
+   "badge": "Veterans Day",
+   "calm": true
+  },
+  {
+   "id": "halo",
+   "name": "Halloween",
+   "rule": "fixed:10-31",
+   "ring": "#F28C28",
+   "strip": [
+    "#F28C28"
+   ],
+   "badge": "Halloween"
+  },
+  {
+   "id": "diwali",
+   "name": "Diwali",
+   "rule": "table:diwali:1",
+   "ring": "#D4AF37",
+   "strip": [
+    "#E8821C"
+   ],
+   "badge": "Diwali"
+  },
+  {
+   "id": "thanks",
+   "name": "Thanksgiving",
+   "rule": "nth:thu:4:nov:1",
+   "ring": "#BA5A1E",
+   "strip": [
+    "#BA5A1E"
+   ],
+   "badge": "Thanksgiving"
+  },
+  {
+   "id": "hanuk",
+   "name": "Hanukkah",
+   "rule": "table:hanukkah:8",
+   "ring": "#2A5CAA",
+   "strip": [
+    "#2A5CAA",
+    "#FFFFFF",
+    "#D4AF37"
+   ],
+   "badge": "Hanukkah · night {n}"
+  },
+  {
+   "id": "xmas",
+   "name": "Christmas",
+   "rule": "range:12-24:12-25",
+   "ring": "#A32D2D",
+   "strip": [
+    "#A32D2D"
+   ],
+   "badge": "Holidays"
+  },
+  {
+   "id": "kwanzaa",
+   "name": "Kwanzaa",
+   "rule": "range:12-26:01-01",
+   "ring": null,
+   "strip": [
+    "#C0392B",
+    "#111111",
+    "#1D9E75"
+   ],
+   "badge": "Kwanzaa"
+  },
+  {
+   "id": "lunar",
+   "name": "Lunar New Year",
+   "rule": "table:lunar:3",
+   "ring": null,
+   "strip": [
+    "#C0392B",
+    "#D4AF37"
+   ],
+   "badge": "Lunar New Year"
+  }
+ ]
+}

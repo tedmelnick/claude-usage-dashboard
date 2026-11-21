@@ -1,0 +1,27 @@
+{
+ "hover": [
+  "Nobody here but us bars.",
+  "The limit is a suggestion. A strongly worded one.",
+  "This icon does nothing. You waited 3 seconds for it.",
+  "A watched meter never fills. It fills anyway.",
+  "Refreshing every 60 seconds, whether you look or not.",
+  "Pace yourself. Or don't. I'm just a dashboard.",
+  "Fun fact: counting your plan uses none of your plan.",
+  "Aim for the 40s. The 100 hole is a trap.",
+  "Smooth roll, straight line.",
+  "Still counting. Still judging. Mostly counting."
+ ],
+ "empty": "Untouched. Pristine. Suspicious.",
+ "numbers": {
+  "n1": "Full circle. Nine 40s, no notes.",
+  "n2": "42. The answer to everything, apparently.",
+  "n3": "High five. Nine 50s would be proud.",
+  "n4": "Battlefish. Rare, loud and slightly ridiculous.",
+  "n5": "Nice.",
+  "n6": "Unicorn. Perfect frame! Also, 90% used, so pace yourself."
+ },
+ "arcade": "Esc to exit",
+ "developer": "You're now a developer",
+ "streak": "Streak: {n} day{s} under the limit",
+ "streak_none": "No streak yet"
+}

@@ -30,7 +30,8 @@ MAX_UNPACKED_BYTES = 150 * 1024 * 1024
 MAX_NOTE_CHARS = 1500
 
 # Never replaced by an update: the user's own data.
-PROTECTED = {"config.json", "usage_history.db", "usage_history.db-journal", "dump.json"}
+PROTECTED = {"config.json", "usage_history.db", "usage_history.db-journal", "dump.json",
+             "found.json", "dates_custom.json", "quips_custom.json"}
 SKIP_DIRS = {".git", "__pycache__", "_backup_before_update", ".pytest_cache"}
 BACKUP_DIR = "_backup_before_update"
 

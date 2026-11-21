@@ -1,0 +1,14 @@
+{
+ "f13": {"session": "Doom remaining, this session", "weekly_all": "Doom remaining, this week", "scoped": "Doom remaining, {name}"},
+ "night": "Burning the midnight oil",
+ "pi": "Pi Day. 3.14159 and counting.",
+ "pi_at": "3.14159. Right on time.",
+ "may4": "May the 4th: may your limits be ever generous.",
+ "leap": "Bonus day. The limits didn't get one, though.",
+ "nye": "Happy New Year in {s}",
+ "ny": "Fresh start. Same limits, though.",
+ "bday": "Happy birthday{name}!",
+ "game": "Game night. Roll straight.",
+ "t911": "Remembering September 11 · 343",
+ "t911_at": "8:46 AM · Remembering September 11 · 343"
+}

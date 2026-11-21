@@ -200,16 +200,16 @@ def test_update_pill_whats_new_and_skip(fake_tk, tmp_path):
     root = [w for w in Widget.instances if isinstance(w, FakeRoot)][0]
     pump(root)
     settle(root)   # the first pump started the automatic check; this shows its answer
-    pill = label_with("\u2191 v2.4.0")
+    pill = label_with("\u2191 v2.5.0")
     click_label(pill)                       # opens the What's new window
     text_box = [w for w in Widget.instances if type(w).__name__ == "Text"][0]
     shown = " ".join(str(a[1]) for n, a, _k in text_box.calls if n == "insert")
-    assert "v2.4.0" in shown and "v2.3.1" in shown and "made-up fix" in shown
+    assert "v2.5.0" in shown and "v2.4.1" in shown and "made-up fix" in shown
     assert "Update now" in buttons() and "Later" in buttons()
     hidden_before = pill.calls.count(("pack_forget", (), {}))
     buttons()["Skip this version"].command()
     cfg = json.loads((tmp_path / "config.json").read_text())
-    assert cfg["skipped_version"] == "v2.4.0"
+    assert cfg["skipped_version"] == "v2.5.0"
     assert pill.calls.count(("pack_forget", (), {})) == hidden_before + 1   # the pill is hidden
 
 
@@ -219,7 +219,7 @@ def test_update_now_in_preview_installs_nothing(fake_tk):
     root = [w for w in Widget.instances if isinstance(w, FakeRoot)][0]
     pump(root)
     settle(root)
-    click_label(label_with("\u2191 v2.4.0"))
+    click_label(label_with("\u2191 v2.5.0"))
     buttons()["Update now"].command()
     settle(root, 1.6)
     assert any("preview" in str(w.kw.get("text", "")) for w in labels())
@@ -366,7 +366,138 @@ def test_about_updates_row_follows_the_check(fake_tk):
     settle(root)
     open_menu()
     menu_command("About this app")
-    label_with("v2.4.0 available")          # the pretend newer release, in the Updates row
+    label_with("v2.5.0 available")          # the pretend newer release, in the Updates row
     menu = [w for w in Widget.instances if type(w).__name__ == "Menu"][-1]
     hint = [k["accelerator"] for n, _a, k in menu.calls if n == "add_command" and k.get("label") == "Check for updates"]
-    assert hint == ["\u2191 v2.4.0"]        # the menu's right-hand hint shows the waiting update
+    assert hint == ["\u2191 v2.5.0"]        # the menu's right-hand hint shows the waiting update
+
+
+# ---- extras ----
+
+def handler(root, event, widget=None):
+    """The function bound to an event on the root (bind_all) or on a given widget (bind)."""
+    src = widget if widget is not None else root
+    for name, a, _k in src.calls:
+        if name in ("bind", "bind_all") and a and a[0] == event:
+            return a[1]
+    raise AssertionError(f"nothing bound to {event}")
+
+
+def key(root, sym):
+    handler(root, "<Key>")(types.SimpleNamespace(keysym=sym))
+
+
+def label_texts():
+    return [w.kw.get("text") for w in Widget.instances if type(w).__name__ == "Label"]
+
+
+def test_key_sequence_switches_the_arcade_theme_on_and_off(fake_tk, tmp_path):
+    from usage_dashboard import eggs, gui
+    root = start()
+    pump(root)
+    dark_bg = gui.BG
+    for k in eggs.KEY_SEQUENCE:
+        key(root, k)
+    assert gui.BG == gui.PALETTES["arcade"]["BG"] != dark_bg
+    assert gui.BLUE == gui.PALETTES["arcade"]["BLUE"]
+    key(root, "Escape")
+    assert gui.BG == dark_bg and gui.BLUE == gui.ACCENTS["BLUE"]
+    assert not (tmp_path / "config.json").exists() or "arcade" not in (tmp_path / "config.json").read_text()
+    for k in eggs.KEY_SEQUENCE:       # the same keys again start it, and again stop it
+        key(root, k)
+    assert gui.BG != dark_bg
+    for k in eggs.KEY_SEQUENCE:
+        key(root, k)
+    assert gui.BG == dark_bg
+
+
+def test_typing_opens_the_stats_page(fake_tk):
+    root = start()
+    pump(root)
+    for k in "stats":
+        key(root, k)
+    assert "Stats" in label_texts()
+
+
+def test_extras_off_ignores_everything(fake_tk, tmp_path):
+    from usage_dashboard import eggs, gui
+    (tmp_path / "config.json").write_text('{"extras": false}')
+    root = start()
+    pump(root)
+    before = gui.BG
+    for k in eggs.KEY_SEQUENCE:
+        key(root, k)
+    for k in "stats":
+        key(root, k)
+    assert gui.BG == before and "Stats" not in label_texts()
+
+
+def test_seven_clicks_on_the_version_open_the_developer_panel(fake_tk):
+    root = start()
+    pump(root)
+    from usage_dashboard import eggs
+    # open About through the version menu
+    handler(root, "<Button-1>", [w for w in Widget.instances if w.kw.get("text", "").startswith("v2")][0])(
+        types.SimpleNamespace(x_root=0, y_root=0))
+    menu = [w for w in Widget.instances if type(w).__name__ == "Menu"][-1]
+    about = [k["command"] for n, a, k in menu.calls if n == "add_command" and k.get("label") == "About this app"][0]
+    about()
+    ver = [w for w in Widget.instances if str(w.kw.get("text", "")).startswith("Version ")][0]
+    click = handler(root, "<Button-1>", ver)
+    for _ in range(7):
+        click(types.SimpleNamespace())
+    pump(root, 0)
+    texts = label_texts()
+    assert "Developer" in texts and "Secrets found" in texts
+    assert f"0 of {len(eggs.ALL_IDS)}" not in texts    # opening the panel is itself a find
+
+
+def test_demo_eggs_preview_runs(fake_tk):
+    root = start(argv=["--demo-eggs"])
+    pump(root)
+    pump(root, 0)
+
+
+def ring_and_strip():
+    ring = [w.kw.get("highlightthickness") for w in Widget.instances
+            if type(w).__name__ == "Frame" and w.kw.get("highlightthickness") == 2]
+    return bool(ring)
+
+
+def test_a_holiday_tints_the_window_and_a_normal_day_does_not(fake_tk):
+    root = start(argv=["--egg-date=2026-11-26T12:00:00"])      # a Thursday in late November
+    pump(root)
+    assert ring_and_strip() and "Thanksgiving" in label_texts()
+    Widget.instances = []
+    root = start(argv=["--egg-date=2026-03-03T12:00:00"])
+    pump(root)
+    assert not ring_and_strip()
+
+
+def test_the_quiet_day_is_plain_and_turns_everything_else_off(fake_tk):
+    from usage_dashboard import eggs, gui
+    root = start(argv=["--egg-date=2026-09-11T12:00:00"])
+    pump(root)
+    assert not ring_and_strip()
+    assert any(str(t).startswith("Remembering") for t in label_texts())
+    before = gui.BG
+    for k in eggs.KEY_SEQUENCE:
+        key(root, k)
+    assert gui.BG == before
+
+
+def test_the_quiet_day_can_be_switched_off(fake_tk, tmp_path):
+    (tmp_path / "config.json").write_text('{"quiet_days": false}')
+    root = start(argv=["--egg-date=2026-09-11T12:00:00"])
+    pump(root)
+    assert not any(str(t).startswith("Remembering") for t in label_texts())
+
+
+def test_spooky_labels_only_on_the_right_day(fake_tk):
+    root = start(argv=["--egg-date=2026-11-13T12:00:00"])      # a Friday the 13th
+    pump(root)
+    assert any(str(t).startswith("Doom") for t in label_texts())
+    Widget.instances = []
+    root = start(argv=["--egg-date=2026-11-14T12:00:00"])
+    pump(root)
+    assert not any(str(t).startswith("Doom") for t in label_texts())

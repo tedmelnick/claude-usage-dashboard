@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.4.0
+Features
+- Seasonal touches: on public holidays and a few observances the window gets a thin colored ring, a strip under the title and a small badge. The red, amber and green status colors never change.
+- Quieter refreshing: while nothing changes, the wait between updates grows from 60 to 90 to 120 seconds, and goes back to 60 when a bar moves, on Refresh, on a click in the window, or when a reset is near. The new `refresh_max_seconds` setting controls it (set it equal to `refresh_seconds` to turn it off).
+- Your history now also remembers which sources and projects used the most, for the stats to come.
+- A few small surprises have been added. Turn them all off with `extras` set to `false` in `config.json`.
+
+Other
+- Your own birthday, extra quips and similar personal touches can go in `dates_custom.json` and `quips_custom.json` next to `config.json`. Git ignores them, and updates never replace them.
+- `--demo-update` now pretends v2.5.0 and v2.4.1 are out.
+
 ## 2.3.0
 Features
 - Clicking the version next to the title now opens a menu: About this app, What's new, Copy version info, Open release page and Check for updates.

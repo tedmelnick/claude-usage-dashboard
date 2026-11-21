@@ -259,3 +259,21 @@ def next_delay(refresh, failures, kind="error", retry_after=None):
         except (TypeError, ValueError):
             pass
     return delay
+
+
+def stretch_delay(base, max_seconds, unchanged):
+    """Seconds to wait after a good reading while nothing has changed.
+
+    Starts at the normal refresh interval and grows by 30 seconds for each reading in a
+    row that looked the same, up to max_seconds. A max at or below the interval turns it
+    off. The caller resets `unchanged` to 0 when a bar moves, on Refresh, on a click in
+    the window, or when a reset is near.
+    """
+    base = max(15, int(base))
+    try:
+        top = int(max_seconds)
+    except (TypeError, ValueError):
+        return base
+    if top <= base:
+        return base
+    return min(top, base + 30 * max(0, int(unchanged)))
