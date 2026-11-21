@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import demo as demo_data
+from . import status_icon, taskbar
 from .alerts import AlertTracker, notify
 from .api import UsageError, fetch_usage
 from .config import DUMP_PATH, HISTORY_DAY_CHOICES, HISTORY_DB_PATH, load_config, save_config
@@ -197,8 +198,24 @@ def run_gui(demo=False, dump=False, stale=False):
     threading.Thread(target=worker, daemon=True).start()
 
     # ---- window ----
+    taskbar.set_app_id()  # so the taskbar shows this app's own icon, not Python's
     root = tk.Tk()
     root.title("Claude usage")
+    icon_state = {"key": None, "images": [], "static": None}
+    tb_progress = taskbar.TaskbarProgress()
+
+    def set_static_icon():
+        assets = Path(__file__).resolve().parent.parent / "assets"
+        try:
+            if sys.platform.startswith("win") and (assets / "icon.ico").exists():
+                root.iconbitmap(default=str(assets / "icon.ico"))
+            elif (assets / "icon.png").exists():
+                icon_state["static"] = tk.PhotoImage(file=str(assets / "icon.png"))
+                root.iconphoto(True, icon_state["static"])
+        except Exception:
+            pass  # the default icon is fine
+
+    set_static_icon()
     root.configure(bg=BG)
     root.minsize(360, 120)
     families = set(tkfont.families(root))
@@ -742,6 +759,31 @@ def run_gui(demo=False, dump=False, stale=False):
             dismiss_alert()
         root.after(1000, tick_status)
 
+    def toplevel_hwnd():
+        try:
+            import ctypes
+            return ctypes.windll.user32.GetParent(root.winfo_id())
+        except Exception:
+            return 0
+
+    def update_taskbar():
+        """Redraw the taskbar icon (session and weekly bars) and its progress strip."""
+        if state["usage"] is None:
+            return
+        try:
+            st = status_icon.summarize(parse_limits(state["usage"]), datetime.now(timezone.utc))
+            if st is None:
+                return
+            if cfg.get("dynamic_icon", True) and st["key"] != icon_state["key"]:
+                icon_state["images"] = [tk.PhotoImage(data=status_icon.icon_base64(st, n))
+                                        for n in (16, 32, 48)]
+                root.iconphoto(True, *icon_state["images"])
+                icon_state["key"] = st["key"]
+            if cfg.get("taskbar_progress", True):
+                tb_progress.update(toplevel_hwnd(), st["progress_pct"], st["progress_state"])
+        except Exception:
+            pass  # the icon is a nicety; never let it break the window
+
     def poll():
         changed = False
         try:
@@ -773,11 +815,13 @@ def run_gui(demo=False, dump=False, stale=False):
             pass
         if changed:
             render_limits()
+            update_taskbar()
         root.after(300, poll)
 
     def redraw_countdowns():
         if state["usage"] is not None:
             render_limits()
+            update_taskbar()
         root.after(30_000, redraw_countdowns)
 
     def on_close():

@@ -49,7 +49,7 @@ class FakeRoot(Widget):
 def fake_tk(monkeypatch, tmp_path):
     Widget.instances = []
     tk = types.ModuleType("tkinter")
-    for name in ("Frame", "Label", "Button", "Canvas", "Toplevel"):
+    for name in ("Frame", "Label", "Button", "Canvas", "Toplevel", "PhotoImage"):
         setattr(tk, name, type(name, (Widget,), {}))
     tk.Tk = FakeRoot
     tk.TclError = type("TclError", (Exception,), {})
@@ -127,3 +127,11 @@ def test_stale_preview_and_compact_start(fake_tk, tmp_path):
     root = start(stale=True)
     pump(root)
     pump(root, 0)
+
+
+def test_taskbar_icon_is_redrawn_from_usage(fake_tk):
+    root = start()
+    pump(root)
+    pump(root, 0)
+    names = [c[0] for c in root.calls]
+    assert "iconphoto" in names   # the live icon was set from the demo numbers

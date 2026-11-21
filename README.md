@@ -41,8 +41,15 @@ The dashboard sends a desktop notification, and shows a strip at the top of the 
 
 Each alert fires once. The first reading after you start the app is only a baseline, so opening it at 85% doesn't announce 80%. Run `Test alert.bat` to check that notifications reach you. If they don't, Windows Focus Assist / Do Not Disturb may be hiding them; the strip in the window still shows. Set `alerts_enabled` to `false` to turn all of this off, or `alert_sound` to `true` to add the system sound on Windows.
 
+## Icons and the taskbar
+- The desktop shortcut and the window use the icon in `assets/` (a countdown ring around three gauge bars). Run `Setup.bat` again to give an existing shortcut the new icon.
+- **Live taskbar icon (Windows):** while the dashboard runs, its taskbar icon is redrawn on each update as two bars, current session on top and weekly (all models) below. A bar is blue normally, amber when it is getting warm (70% used, or on pace to finish above 90%) and red when it is urgent (90% used, or on pace to run out before the reset). An urgent bar also gets a small spark at its tip.
+- **Taskbar progress strip (Windows):** the taskbar button also shows a progress strip for whichever of the two limits is more urgent: green, yellow or red to match.
+- Turn either off with `dynamic_icon` or `taskbar_progress` set to `false` in `config.json`. Elsewhere the static icon is used.
+
 ## Files
 - `Setup.bat`: one-time setup (Python check, Claude Code check, desktop shortcut).
+- `assets/`: the app icon (`icon.ico`, `icon.png`, and the SVG sources).
 - `Preview (demo).bat`: runs with fake data. `python claude_usage_dashboard.py --demo --stale` previews the stale warning.
 - `Debug dump.bat`: writes the raw reply to `dump.json`. Use it if bars are missing or wrong.
 - `Test alert.bat`: sends a test notification.
@@ -68,6 +75,7 @@ Close the dashboard before editing, because closing it re-saves the settings.
 | `snapshots_enabled` | `true` | Save readings to `usage_history.db` |
 | `snapshot_keep_days` | 365 | Readings older than this are deleted |
 | `compact` | `false` | Compact view |
+| `dynamic_icon`, `taskbar_progress` | `true` | Live taskbar icon and taskbar progress strip (see Icons and the taskbar) |
 | `alerts_enabled`, `alert_thresholds`, `alert_on_runout`, `alert_on_reset`, `alert_reset_min_pct`, `alert_sound` | see above | Alerts |
 | `prices_per_mtok` | `{}` | Dollars per million tokens by model family, for the cost estimate |
 | `open_folder` | your home folder | What the Open folder button opens |

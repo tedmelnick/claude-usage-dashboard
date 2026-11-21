@@ -56,6 +56,10 @@ DEFAULT_CONFIG = {
     "snapshots_enabled": True,
     "snapshot_keep_days": 365,
     "trend_weeks": 8,
+    # Taskbar: the icon redraws itself as two bars (session, weekly), and the taskbar
+    # button shows a progress strip for whichever limit is more urgent (Windows).
+    "dynamic_icon": True,
+    "taskbar_progress": True,
 }
 
 

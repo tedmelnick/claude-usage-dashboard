@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0
+Features
+- New app icon for the desktop shortcut and the window: a countdown ring around three gauge bars.
+- Live taskbar icon (Windows): two bars, current session and weekly, that turn blue, amber or red and show a spark when a limit is urgent (90% used, or on pace to run out).
+- Taskbar progress strip showing the more urgent of the two limits, in green, yellow or red.
+- `dynamic_icon` and `taskbar_progress` settings (both on by default).
+- `Setup.bat` puts the icon on the desktop shortcut.
+
 ## 2.0.1
 Fixes
 - Token refresh no longer fails with a 403. It now uses `platform.claude.com` (Claude Code's current token endpoint), sends the same User-Agent as the usage request, and falls back to the older host. Failures now show the HTTP status.

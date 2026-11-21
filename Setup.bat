@@ -69,7 +69,8 @@ if "%APPDIR:~-1%"=="\" set "APPDIR=%APPDIR:~0,-1%"
 set "PYW_EXE=%PYW%"
 set "APP_SCRIPT=%APPDIR%\claude_usage_dashboard.py"
 set "APP_FOLDER=%APPDIR%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$d=[Environment]::GetFolderPath('Desktop'); $s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'Claude Usage Dashboard.lnk')); $s.TargetPath=$env:PYW_EXE; $s.Arguments='\"'+$env:APP_SCRIPT+'\"'; $s.WorkingDirectory=$env:APP_FOLDER; $s.Description='Claude Usage Dashboard'; $s.Save()"
+set "ICON_FILE=%APPDIR%\assets\icon.ico"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$d=[Environment]::GetFolderPath('Desktop'); $s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'Claude Usage Dashboard.lnk')); $s.TargetPath=$env:PYW_EXE; $s.Arguments='\"'+$env:APP_SCRIPT+'\"'; $s.WorkingDirectory=$env:APP_FOLDER; $s.Description='Claude Usage Dashboard'; if (Test-Path $env:ICON_FILE) { $s.IconLocation=$env:ICON_FILE+',0' }; $s.Save()"
 if errorlevel 1 (
     echo Could not create the desktop shortcut. Use Start Claude Usage.bat instead.
 ) else (
