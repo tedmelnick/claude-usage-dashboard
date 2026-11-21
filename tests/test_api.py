@@ -114,3 +114,43 @@ def test_missing_sign_in(monkeypatch):
     with pytest.raises(api.UsageError) as e:
         api.fetch_usage({})
     assert e.value.kind == "auth"
+
+
+def test_refresh_sends_user_agent_and_falls_back_to_second_endpoint(monkeypatch, tmp_path):
+    creds = {"claudeAiOauth": {"accessToken": "old", "refreshToken": "rt", "expiresAt": 0}}
+    monkeypatch.setattr(api, "read_credentials", lambda: creds)
+    monkeypatch.setattr(api, "resolve_user_agent", lambda cfg: "claude-code/test")
+    monkeypatch.setattr(api, "_creds_path", lambda: tmp_path / ".credentials.json")
+    seen = []
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps({"access_token": "new", "refresh_token": "rt2", "expires_in": 3600}).encode()
+
+    def fake(req, timeout=0):
+        seen.append((req.full_url, req.get_header("User-agent")))
+        if len(seen) == 1:
+            raise _http_error(403)
+        return Reply()
+    monkeypatch.setattr(api.urllib.request, "urlopen", fake)
+    out = api.refresh_credentials(creds, {})
+    assert out["claudeAiOauth"]["accessToken"] == "new"
+    assert [u for u, _ in seen] == list(api.TOKEN_URLS)
+    assert all(ua == "claude-code/test" for _, ua in seen)
+
+
+def test_refresh_failure_reports_status(monkeypatch):
+    creds = {"claudeAiOauth": {"refreshToken": "rt"}}
+    monkeypatch.setattr(api, "read_credentials", lambda: creds)
+    monkeypatch.setattr(api, "resolve_user_agent", lambda cfg: "claude-code/test")
+    monkeypatch.setattr(api.urllib.request, "urlopen",
+                        lambda *a, **k: (_ for _ in ()).throw(_http_error(400)))
+    with pytest.raises(api.UsageError) as e:
+        api.refresh_credentials(creds, {})
+    assert "400" in str(e.value) and e.value.kind == "auth"

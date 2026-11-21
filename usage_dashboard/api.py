@@ -13,7 +13,9 @@ from pathlib import Path
 from .config import FALLBACK_UA, OLD_DEFAULT_UA
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
-TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+# Claude Code now refreshes on platform.claude.com; the older console host is kept as a fallback.
+TOKEN_URLS = ("https://platform.claude.com/v1/oauth/token",
+              "https://console.anthropic.com/v1/oauth/token")
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code's public OAuth client
 
 
@@ -47,7 +49,7 @@ def read_credentials():
         return None
 
 
-def refresh_credentials(creds):
+def refresh_credentials(creds, cfg=None):
     """Refresh the OAuth token and write the rotated tokens back (opt-in)."""
     oauth = dict(creds.get("claudeAiOauth", {}))
     rt = oauth.get("refreshToken")
@@ -55,16 +57,30 @@ def refresh_credentials(creds):
         raise UsageError("Sign-in expired. Open Claude Code to sign in again.", "auth")
     body = json.dumps({"grant_type": "refresh_token", "refresh_token": rt,
                        "client_id": CLIENT_ID}).encode()
-    req = urllib.request.Request(TOKEN_URL, data=body,
-                                 headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            result = json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        latest = read_credentials()
-        if latest and latest.get("claudeAiOauth", {}).get("refreshToken") != rt:
-            return latest  # Claude Code refreshed it first
-        raise UsageError(f"Token refresh failed ({e.code}). Open Claude Code to refresh it.", "auth")
+    headers = {"Content-Type": "application/json",
+               "User-Agent": resolve_user_agent(cfg or {})}
+    result = None
+    last_code = None
+    for url in TOKEN_URLS:
+        req = urllib.request.Request(url, data=body, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                result = json.loads(r.read())
+            break
+        except urllib.error.HTTPError as e:
+            latest = read_credentials()
+            if latest and latest.get("claudeAiOauth", {}).get("refreshToken") != rt:
+                return latest  # Claude Code refreshed it first
+            last_code = e.code
+            if e.code in (403, 404):
+                continue  # wrong host or blocked request: try the next endpoint
+            break
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            raise UsageError(f"Can't reach Anthropic ({getattr(e, 'reason', e)}). Check your connection.", "net")
+        except ValueError:
+            raise UsageError("Unexpected reply from the token endpoint.", "format")
+    if result is None:
+        raise UsageError(f"Token refresh failed ({last_code}). Open Claude Code to refresh it.", "auth")
     oauth["accessToken"] = result["access_token"]
     if result.get("refresh_token"):
         oauth["refreshToken"] = result["refresh_token"]
@@ -145,7 +161,7 @@ def fetch_usage(cfg):
         raise UsageError("No access token in Claude Code's credentials.", "auth")
     if time.time() * 1000 > oauth.get("expiresAt", 0) - 60_000:
         if cfg.get("auto_refresh_token"):
-            creds = refresh_credentials(creds)
+            creds = refresh_credentials(creds, cfg)
             token = creds["claudeAiOauth"]["accessToken"]
         else:
             raise UsageError(
