@@ -7,12 +7,23 @@ An always-on-top window (for a second monitor) that shows how much of your Claud
 
 Unofficial project. Not affiliated with or endorsed by Anthropic.
 
+## Is this safe?
+Yes, and you can check for yourself. It is plain Python source with no compiled program and no hidden installer, and the whole thing is in this repository.
+- It runs only on your PC and uses none of your plan. It reads the same usage numbers Claude Code's `/usage` shows, plus Claude Code's local logs.
+- Your sign-in goes only to Anthropic, the same place Claude Code sends it. The only other thing it contacts is GitHub, to look for new versions. There are no accounts, ads or analytics.
+- App updates only happen when you press **Update now**. `Setup.bat` is a short script you can read first; the only thing it installs is Python (through winget), and only if you don't have it.
+- It reads Claude Code's saved sign-in file (`~/.claude/.credentials.json`), which is why this section exists. Details are under [Privacy and safety](#privacy-and-safety).
+
 ## Requirements
-- Windows, with Python 3 and tkinter (the python.org installer includes both). macOS and Linux work too, with a few differences: see [Other systems](#other-systems).
+- Windows, with Python 3.9 or newer and tkinter (the python.org installer includes both). macOS and Linux work too, with a few differences: see [Other systems](#other-systems).
 - [Claude Code](https://code.claude.com) installed and signed in once with your claude.ai account (Pro, Max, Team or seat-based Enterprise). The dashboard reads the sign-in Claude Code saves. It does not work with API-key or Console-only logins, or on the Free plan.
 
 ## Setup
-Download the latest release (or clone the repo), then double-click `Setup.bat` once. It checks for Python and tkinter (installing Python with winget if missing), checks for Claude Code and its sign-in, and puts a "Claude Usage Dashboard" shortcut on your desktop. If it installs Python, run it a second time afterwards.
+1. On the [Releases page](https://github.com/tedmelnick/claude-usage-dashboard/releases/latest), download **Source code (zip)** and unzip it somewhere permanent (not inside the zip, and not a temporary folder, because the shortcut points there). Or clone the repo.
+2. Double-click `Setup.bat` once. It checks for Python and tkinter (installing Python with winget if missing), checks for Claude Code and its sign-in, and puts a "Claude Usage Dashboard" shortcut on your desktop. If it installs Python, run it a second time afterwards.
+3. If Windows shows "Windows protected your PC" for a file from the zip, that is SmartScreen's standard warning for downloaded scripts. Choose **More info**, then **Run anyway**. You can open `Setup.bat` in Notepad first to see exactly what it does.
+
+To remove it, delete the folder and the desktop shortcut. Nothing else is installed (except Python, if Setup.bat installed it).
 
 ## Run
 Double-click the desktop shortcut or `Start Claude Usage.bat`. Or run `pythonw claude_usage_dashboard.py`.
@@ -68,6 +79,7 @@ The version you're running (for example `v2.3.0`) is shown next to the title, in
 - `Preview update.bat`: previews the update button with made-up releases.
 - `Install hook.bat` (maintainers, once): makes every `git commit` in your clone stamp the release time shown in About, so nothing needs editing by hand.
 - `Release.bat` (maintainers): sets the release time shown in About, runs the tests, then commits and pushes. Publishing the release (tag `vX.Y.Z`) is still done on github.com.
+- `CHANGELOG.md`: what changed in each version. `LICENSE`: MIT.
 - `Debug dump.bat`: writes the raw reply to `dump.json`. Use it if bars are missing or wrong.
 - `Test alert.bat`: sends a test notification.
 - `config.json`: created on first close. See below.
@@ -127,6 +139,9 @@ The dashboard is built on Windows, and the macOS and Linux paths have only been 
 - Notifications use `osascript` on macOS and `notify-send` on Linux.
 - Fonts fall back to the first of Helvetica Neue, Ubuntu, DejaVu Sans or Helvetica that is installed.
 - Claude Code's sign-in on macOS is kept in the Keychain rather than `~/.claude/.credentials.json`, so the dashboard may not find it there.
+
+## Reporting a problem
+Click the version next to the title, choose **Copy version info**, and paste it into your report. It has the version, install type, Python and OS, and no file paths or account details. If bars are missing or wrong, run `Debug dump.bat` too, but look through `dump.json` before sharing it.
 
 ## Development
 ```
