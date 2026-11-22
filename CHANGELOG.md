@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.2
+Fixes
+- Fixed a loop where a rate-limited sign-in refresh was retried every minute. It now waits at least five minutes before trying again.
+
 ## 2.4.1
 Fixes
 - Small fixes to the About window.
