@@ -61,6 +61,7 @@ def refresh_credentials(creds, cfg=None):
                "User-Agent": resolve_user_agent(cfg or {})}
     result = None
     last_code = None
+    last_retry = None
     for url in TOKEN_URLS:
         req = urllib.request.Request(url, data=body, headers=headers)
         try:
@@ -72,6 +73,7 @@ def refresh_credentials(creds, cfg=None):
             if latest and latest.get("claudeAiOauth", {}).get("refreshToken") != rt:
                 return latest  # Claude Code refreshed it first
             last_code = e.code
+            last_retry = _retry_after(e.headers)
             if e.code in (403, 404):
                 continue  # wrong host or blocked request: try the next endpoint
             break
@@ -80,6 +82,10 @@ def refresh_credentials(creds, cfg=None):
         except ValueError:
             raise UsageError("Unexpected reply from the token endpoint.", "format")
     if result is None:
+        if last_code == 429:
+            # Rate limited: back off instead of retrying every refresh (which keeps it limited).
+            raise UsageError("Token refresh rate limited (429). Backing off; opening Claude Code "
+                             "also refreshes it.", "rate", retry_after=max(last_retry or 0, 300))
         raise UsageError(f"Token refresh failed ({last_code}). Open Claude Code to refresh it.", "auth")
     oauth["accessToken"] = result["access_token"]
     if result.get("refresh_token"):

@@ -154,3 +154,14 @@ def test_refresh_failure_reports_status(monkeypatch):
     with pytest.raises(api.UsageError) as e:
         api.refresh_credentials(creds, {})
     assert "400" in str(e.value) and e.value.kind == "auth"
+
+
+def test_refresh_429_backs_off_as_rate_limit(monkeypatch):
+    creds = {"claudeAiOauth": {"refreshToken": "rt"}}
+    monkeypatch.setattr(api, "read_credentials", lambda: creds)
+    monkeypatch.setattr(api, "resolve_user_agent", lambda cfg: "claude-code/test")
+    monkeypatch.setattr(api.urllib.request, "urlopen",
+                        lambda *a, **k: (_ for _ in ()).throw(_http_error(429)))
+    with pytest.raises(api.UsageError) as e:
+        api.refresh_credentials(creds, {})
+    assert e.value.kind == "rate" and e.value.retry_after >= 300
