@@ -118,6 +118,9 @@ class TestNextDelay:
     def test_sign_in_problems_do_not_back_off(self):
         assert core.next_delay(60, 5, "auth") == 60
 
+    def test_a_held_off_refresh_keeps_the_normal_pace(self):
+        assert core.next_delay(60, 9, "wait") == 60
+
 
 class TestStretchDelay:
     def test_grows_by_thirty_seconds_to_the_max(self):

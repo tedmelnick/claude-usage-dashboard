@@ -19,6 +19,42 @@ TOKEN_URLS = ("https://platform.claude.com/v1/oauth/token",
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code's public OAuth client
 
 
+# After the token endpoint answers 429 the app stops asking it: first for 5 minutes, then
+# 10, 20, 40, and at most an hour (a longer Retry-After from the server wins). Meanwhile it
+# only re-reads Claude Code's sign-in file, so it picks up a token Claude Code refreshed.
+REFRESH_COOLDOWN_FIRST = 300
+REFRESH_COOLDOWN_MAX = 3600
+_REFRESH = {"until": 0.0, "hits": 0}
+
+
+def refresh_cooldown_left(now=None):
+    """Seconds left before the token endpoint may be asked again (0 = go ahead)."""
+    now = time.time() if now is None else now
+    return max(0, int(_REFRESH["until"] - now + 0.999))
+
+
+def _start_refresh_cooldown(retry_after=None, now=None):
+    now = time.time() if now is None else now
+    _REFRESH["hits"] += 1
+    wait = min(REFRESH_COOLDOWN_FIRST * 2 ** (_REFRESH["hits"] - 1), REFRESH_COOLDOWN_MAX)
+    wait = max(wait, min(int(retry_after or 0), REFRESH_COOLDOWN_MAX))
+    _REFRESH["until"] = now + wait
+    return wait
+
+
+def _clear_refresh_cooldown():
+    _REFRESH.update(until=0.0, hits=0)
+
+
+def _cooldown_error(seconds):
+    mins = max(1, round(seconds / 60))
+    return UsageError(
+        f"Token refresh is rate limited (429), so the dashboard won't ask again for {mins} min. "
+        "Opening Claude Code refreshes it right away; the checks until then just look for that. "
+        "To stop the dashboard refreshing on its own, set auto_refresh_token to false in config.json.",
+        "wait")
+
+
 class UsageError(Exception):
     def __init__(self, msg, kind="error", retry_after=None):
         super().__init__(msg)
@@ -83,10 +119,10 @@ def refresh_credentials(creds, cfg=None):
             raise UsageError("Unexpected reply from the token endpoint.", "format")
     if result is None:
         if last_code == 429:
-            # Rate limited: back off instead of retrying every refresh (which keeps it limited).
-            raise UsageError("Token refresh rate limited (429). Backing off; opening Claude Code "
-                             "also refreshes it.", "rate", retry_after=max(last_retry or 0, 300))
+            # Rate limited: stop asking for a growing while (asking again keeps it limited).
+            raise _cooldown_error(_start_refresh_cooldown(last_retry))
         raise UsageError(f"Token refresh failed ({last_code}). Open Claude Code to refresh it.", "auth")
+    _clear_refresh_cooldown()
     oauth["accessToken"] = result["access_token"]
     if result.get("refresh_token"):
         oauth["refreshToken"] = result["refresh_token"]
@@ -165,8 +201,13 @@ def fetch_usage(cfg):
     token = oauth.get("accessToken")
     if not token:
         raise UsageError("No access token in Claude Code's credentials.", "auth")
-    if time.time() * 1000 > oauth.get("expiresAt", 0) - 60_000:
+    if time.time() * 1000 <= oauth.get("expiresAt", 0) - 60_000:
+        _clear_refresh_cooldown()   # signed in again (Claude Code refreshed it)
+    else:
         if cfg.get("auto_refresh_token"):
+            left = refresh_cooldown_left()
+            if left > 0:
+                raise _cooldown_error(left)
             creds = refresh_credentials(creds, cfg)
             token = creds["claudeAiOauth"]["accessToken"]
         else:

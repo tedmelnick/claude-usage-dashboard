@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.3
+Fixes
+- Fixed "Token refresh rate limited (429)" showing again and again. After a 429 the dashboard now stops asking for the new sign-in for 5 minutes, then 10, 20, 40 and at most an hour, instead of trying every few minutes. A longer wait requested by Anthropic is respected.
+- While it waits, the dashboard keeps checking Claude Code's sign-in file once a minute, so the numbers come back as soon as Claude Code has refreshed the token (just open Claude Code), with no waiting for the timer.
+- The message now explains this and says how to stop the dashboard refreshing on its own (`auto_refresh_token` set to `false`).
+
 ## 2.4.2
 Fixes
 - Fixed a loop where a rate-limited sign-in refresh was retried every minute. It now waits at least five minutes before trying again.

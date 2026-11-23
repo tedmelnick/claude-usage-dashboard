@@ -5,7 +5,11 @@ WINDOW_MIN = {"session": 300, "weekly": 10080}
 
 # How long (seconds) the app may wait between tries after repeated failures, by kind.
 # 0 means "never back off" (sign-in problems are fixed on the PC, not by waiting).
-BACKOFF_CAP = {"rate": 900, "http": 300, "net": 120, "format": 600, "error": 300, "auth": 0}
+# "wait" is a token refresh the app is holding off on; each try then only re-reads the
+# local sign-in file (no network), so it keeps the normal pace and notices at once when
+# Claude Code has refreshed the token itself.
+BACKOFF_CAP = {"rate": 900, "http": 300, "net": 120, "format": 600, "error": 300,
+               "auth": 0, "wait": 0}
 
 
 def parse_ts(value):

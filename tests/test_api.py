@@ -156,12 +156,86 @@ def test_refresh_failure_reports_status(monkeypatch):
     assert "400" in str(e.value) and e.value.kind == "auth"
 
 
-def test_refresh_429_backs_off_as_rate_limit(monkeypatch):
-    creds = {"claudeAiOauth": {"refreshToken": "rt"}}
+@pytest.fixture
+def fresh_cooldown():
+    api._clear_refresh_cooldown()
+    yield
+    api._clear_refresh_cooldown()
+
+
+def _expired(monkeypatch):
+    creds = {"claudeAiOauth": {"accessToken": "t", "refreshToken": "rt", "expiresAt": 0}}
     monkeypatch.setattr(api, "read_credentials", lambda: creds)
     monkeypatch.setattr(api, "resolve_user_agent", lambda cfg: "claude-code/test")
-    monkeypatch.setattr(api.urllib.request, "urlopen",
-                        lambda *a, **k: (_ for _ in ()).throw(_http_error(429)))
+    return creds
+
+
+def test_refresh_429_starts_a_cooldown_and_does_not_retry(monkeypatch, fresh_cooldown):
+    creds = _expired(monkeypatch)
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(1)
+        raise _http_error(429)
+    monkeypatch.setattr(api.urllib.request, "urlopen", boom)
     with pytest.raises(api.UsageError) as e:
-        api.refresh_credentials(creds, {})
-    assert e.value.kind == "rate" and e.value.retry_after >= 300
+        api.fetch_usage({"auto_refresh_token": True})
+    assert e.value.kind == "wait" and "429" in str(e.value)
+    n = len(calls)
+    assert api.refresh_cooldown_left() > 0
+    # next poll: no network call at all, just the same "wait" notice
+    with pytest.raises(api.UsageError) as e2:
+        api.fetch_usage({"auto_refresh_token": True})
+    assert e2.value.kind == "wait" and len(calls) == n
+
+
+def test_cooldown_grows_and_honours_retry_after(fresh_cooldown):
+    assert api._start_refresh_cooldown(None, now=0) == 300
+    assert api._start_refresh_cooldown(None, now=0) == 600
+    assert api._start_refresh_cooldown(None, now=0) == 1200
+    assert api._start_refresh_cooldown(None, now=0) == 2400
+    assert api._start_refresh_cooldown(None, now=0) == 3600
+    assert api._start_refresh_cooldown(None, now=0) == 3600       # capped at an hour
+    api._clear_refresh_cooldown()
+    assert api._start_refresh_cooldown(900, now=0) == 900          # server asked for longer
+    assert api.refresh_cooldown_left(now=100) == 800
+
+
+def test_cooldown_ends_when_claude_code_refreshed_the_token(monkeypatch, fresh_cooldown):
+    api._start_refresh_cooldown(None)
+    far = 4_000_000_000_000
+    monkeypatch.setattr(api, "read_credentials",
+                        lambda: {"claudeAiOauth": {"accessToken": "new", "expiresAt": far}})
+    monkeypatch.setattr(api, "resolve_user_agent", lambda cfg: "claude-code/test")
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"limits": []}'
+    monkeypatch.setattr(api.urllib.request, "urlopen", lambda *a, **k: Reply())
+    assert api.fetch_usage({"auto_refresh_token": True}) == {"limits": []}
+    assert api.refresh_cooldown_left() == 0
+
+
+def test_successful_refresh_clears_the_cooldown(monkeypatch, tmp_path, fresh_cooldown):
+    creds = _expired(monkeypatch)
+    monkeypatch.setattr(api, "_creds_path", lambda: tmp_path / ".credentials.json")
+    api._start_refresh_cooldown(None)
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps({"access_token": "new", "expires_in": 3600}).encode()
+    monkeypatch.setattr(api.urllib.request, "urlopen", lambda *a, **k: Reply())
+    api.refresh_credentials(creds, {})
+    assert api.refresh_cooldown_left() == 0
