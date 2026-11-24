@@ -11,19 +11,19 @@ Unofficial project. Not affiliated with or endorsed by Anthropic.
 Yes, and you can check for yourself. It is plain Python source with no compiled program and no hidden installer, and the whole thing is in this repository.
 - It runs only on your PC and uses none of your plan. It reads the same usage numbers Claude Code's `/usage` shows, plus Claude Code's local logs.
 - Your sign-in goes only to Anthropic, the same place Claude Code sends it. The only other thing it contacts is GitHub, to look for new versions. There are no accounts, ads or analytics.
-- App updates only happen when you press **Update now**. `Setup.bat` is a short script you can read first; the only thing it installs is Python (through winget), and only if you don't have it.
+- App updates only happen when you press **Update now**. `Setup.bat` is a short script you can read first. It can install Python (through winget) and Claude Code (with Anthropic's official installer), and only if you're missing them and you answer Y when it asks.
 - It reads Claude Code's saved sign-in file (`~/.claude/.credentials.json`), which is why this section exists. Details are under [Privacy and safety](#privacy-and-safety).
 
 ## Requirements
 - Windows, with Python 3.9 or newer and tkinter (the python.org installer includes both). macOS and Linux work too, with a few differences: see [Other systems](#other-systems).
-- [Claude Code](https://code.claude.com) installed and signed in once with your claude.ai account (Pro, Max, Team or seat-based Enterprise). The dashboard reads the sign-in Claude Code saves. It does not work with API-key or Console-only logins, or on the Free plan.
+- [Claude Code](https://code.claude.com) installed and signed in once with your claude.ai account (Pro, Max, Team or seat-based Enterprise). The Claude desktop app alone is not enough, because the dashboard reads the sign-in that Claude Code saves. If you don't have Claude Code yet, `Setup.bat` offers to install it and sign you in. It does not work with API-key or Console-only logins, or on the Free plan.
 
 ## Setup
 1. On the [Releases page](https://github.com/tedmelnick/claude-usage-dashboard/releases/latest), download **Source code (zip)** and unzip it somewhere permanent (not inside the zip, and not a temporary folder, because the shortcut points there). Or clone the repo.
-2. Double-click `Setup.bat` once. It checks for Python and tkinter (installing Python with winget if missing), checks for Claude Code and its sign-in, and puts a "Claude Usage Dashboard" shortcut on your desktop. If it installs Python, run it a second time afterwards.
+2. Double-click `Setup.bat` once. It checks for Python and tkinter (installing Python with winget if missing), checks for Claude Code and its sign-in (offering to install Claude Code and open the sign-in if either is missing), and puts a "Claude Usage Dashboard" shortcut on your desktop. If it installs Python, run it a second time afterwards.
 3. If Windows shows "Windows protected your PC" for a file from the zip, that is SmartScreen's standard warning for downloaded scripts. Choose **More info**, then **Run anyway**. You can open `Setup.bat` in Notepad first to see exactly what it does.
 
-To remove it, delete the folder and the desktop shortcut. Nothing else is installed (except Python, if Setup.bat installed it).
+To remove it, delete the folder and the desktop shortcut. Nothing else is installed (except Python and Claude Code, if Setup.bat installed them for you).
 
 ## Run
 Double-click the desktop shortcut or `Start Claude Usage.bat`. Or run `pythonw claude_usage_dashboard.py`.
@@ -73,7 +73,7 @@ The version you're running (for example `v2.3.0`) is shown next to the title, in
 - Turn either off with `dynamic_icon` or `taskbar_progress` set to `false` in `config.json`. Elsewhere the static icon is used.
 
 ## Files
-- `Setup.bat`: one-time setup (Python check, Claude Code check, desktop shortcut).
+- `Setup.bat`: one-time setup (Python check, Claude Code install and sign-in, desktop shortcut).
 - `assets/`: the app icon (`icon.ico`, `icon.png`, and the SVG sources).
 - `Preview (demo).bat`: runs with fake data. `python claude_usage_dashboard.py --demo --stale` previews the stale warning.
 - `Preview update.bat`: previews the update button with made-up releases.

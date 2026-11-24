@@ -2,7 +2,8 @@
 setlocal
 REM One-time setup for Claude Usage Dashboard (Windows).
 REM Checks Python + tkinter (installs Python with winget if missing),
-REM checks for Claude Code, and puts a shortcut on the desktop.
+REM checks for Claude Code and its sign-in (offers to install it and sign in),
+REM and puts a shortcut on the desktop.
 
 echo.
 echo === Claude Usage Dashboard setup ===
@@ -43,21 +44,60 @@ goto :end
 
 REM ---- 2. Claude Code ----
 :claudecheck
-set "CLAUDE_OK="
-where claude >nul 2>nul && set "CLAUDE_OK=1"
-where claude.cmd >nul 2>nul && set "CLAUDE_OK=1"
-if exist "%USERPROFILE%\.local\bin\claude.exe" set "CLAUDE_OK=1"
-if not defined CLAUDE_OK (
-    echo [!] Claude Code was not found. Install it from https://code.claude.com
-)
-if exist "%USERPROFILE%\.claude\.credentials.json" (
-    echo [ok] Claude Code sign-in found.
-) else (
-    echo [!] No Claude Code sign-in found. Run claude once and sign in with your
-    echo     claude.ai account ^(Pro, Max, Team or seat-based Enterprise^).
-)
+set "CLAUDE_EXE="
+for /f "delims=" %%F in ('where claude.exe 2^>nul') do if not defined CLAUDE_EXE set "CLAUDE_EXE=%%F"
+for /f "delims=" %%F in ('where claude.cmd 2^>nul') do if not defined CLAUDE_EXE set "CLAUDE_EXE=%%F"
+if not defined CLAUDE_EXE if exist "%USERPROFILE%\.local\bin\claude.exe" set "CLAUDE_EXE=%USERPROFILE%\.local\bin\claude.exe"
+if defined CLAUDE_EXE goto :signincheck
+
+echo.
+echo [!] Claude Code was not found. The dashboard needs it, because it reads
+echo     the sign-in that Claude Code saves. The Claude desktop app is not enough.
+echo     Setup can install it with Anthropic's official installer
+echo     ^(it runs: irm https://claude.ai/install.ps1 ^| iex^).
+choice /c YN /n /m "Install Claude Code now? (Y/N) "
+if errorlevel 2 goto :claudeskip
+echo.
+echo Installing Claude Code...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"
+if exist "%USERPROFILE%\.local\bin\claude.exe" set "CLAUDE_EXE=%USERPROFILE%\.local\bin\claude.exe"
+if defined CLAUDE_EXE goto :signincheck
+echo.
+echo The Claude Code install did not finish. Install it from https://code.claude.com
+echo and run Setup.bat again.
+goto :shortcut
+
+:claudeskip
+echo Skipped. Install Claude Code from https://code.claude.com and sign in before
+echo you start the dashboard.
+goto :shortcut
+
+:signincheck
+if exist "%USERPROFILE%\.claude\.credentials.json" goto :signedin
+echo.
+echo [!] No Claude Code sign-in found. Sign in with your claude.ai account
+echo     ^(Pro, Max, Team or seat-based Enterprise^).
+choice /c YN /n /m "Sign in to Claude Code now? A browser window will open. (Y/N) "
+if errorlevel 2 goto :signinskip
+echo.
+echo Sign in in the browser. When Claude Code says you are logged in,
+echo type /exit here to come back to Setup.
+echo.
+call "%CLAUDE_EXE%"
+if exist "%USERPROFILE%\.claude\.credentials.json" goto :signedin
+echo.
+echo Still no sign-in found. Run claude yourself and sign in, then start the dashboard.
+goto :shortcut
+
+:signinskip
+echo Skipped. Run claude once and sign in before you start the dashboard.
+goto :shortcut
+
+:signedin
+echo [ok] Claude Code and its sign-in found.
 
 REM ---- 3. Desktop shortcut ----
+:shortcut
 set "PYW="
 for /f "delims=" %%P in ('python -c "import sys,os;print(os.path.join(os.path.dirname(sys.executable),'pythonw.exe'))"') do set "PYW=%%P"
 if not exist "%PYW%" (

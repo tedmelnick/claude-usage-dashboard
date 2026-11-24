@@ -154,8 +154,12 @@ def parse_claude_version(text):
 
 def detect_claude_version():
     """Ask the installed `claude` for its version. None if it can't be found or run."""
-    for name in ("claude", "claude.cmd", "claude.exe"):
-        exe = shutil.which(name)
+    candidates = [shutil.which(n) for n in ("claude", "claude.cmd", "claude.exe")]
+    # The native installer puts claude here and may not have added it to PATH yet.
+    local = Path.home() / ".local" / "bin" / ("claude.exe" if sys.platform.startswith("win") else "claude")
+    if local.is_file():
+        candidates.append(str(local))
+    for exe in candidates:
         if not exe:
             continue
         kw = {}
