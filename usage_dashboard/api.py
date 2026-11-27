@@ -10,40 +10,71 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .config import FALLBACK_UA, OLD_DEFAULT_UA
+from . import __version__
+from .config import APP_DIR, FALLBACK_UA, OLD_DEFAULT_UA
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 # Claude Code now refreshes on platform.claude.com; the older console host is kept as a fallback.
 TOKEN_URLS = ("https://platform.claude.com/v1/oauth/token",
               "https://console.anthropic.com/v1/oauth/token")
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code's public OAuth client
+# The token request names this app. The usage request keeps the Claude Code User-Agent.
+TOKEN_UA = f"claude-usage-dashboard/{__version__}"
 
 
 # After the token endpoint answers 429 the app stops asking it: first for 5 minutes, then
 # 10, 20, 40, and at most an hour (a longer Retry-After from the server wins). Meanwhile it
 # only re-reads Claude Code's sign-in file, so it picks up a token Claude Code refreshed.
+# The wait is saved to a file, so restarting or updating the app doesn't cut it short.
 REFRESH_COOLDOWN_FIRST = 300
 REFRESH_COOLDOWN_MAX = 3600
-_REFRESH = {"until": 0.0, "hits": 0}
+COOLDOWN_PATH = APP_DIR / "refresh_cooldown.json"
+_REFRESH = {"until": 0.0, "hits": 0, "loaded": False}
+
+
+def _load_cooldown(now):
+    """Pick up a wait saved by an earlier run (read once)."""
+    if _REFRESH["loaded"]:
+        return
+    _REFRESH["loaded"] = True
+    try:
+        saved = json.loads(COOLDOWN_PATH.read_text(encoding="utf-8"))
+        # never longer than the maximum wait, even if the PC clock has moved
+        until = min(float(saved["until"]), now + REFRESH_COOLDOWN_MAX)
+        hits = max(0, min(int(saved["hits"]), 10))
+    except (OSError, ValueError, TypeError, KeyError, OverflowError):
+        return
+    _REFRESH.update(until=until, hits=hits)
 
 
 def refresh_cooldown_left(now=None):
     """Seconds left before the token endpoint may be asked again (0 = go ahead)."""
     now = time.time() if now is None else now
+    _load_cooldown(now)
     return max(0, int(_REFRESH["until"] - now + 0.999))
 
 
 def _start_refresh_cooldown(retry_after=None, now=None):
     now = time.time() if now is None else now
+    _load_cooldown(now)
     _REFRESH["hits"] += 1
     wait = min(REFRESH_COOLDOWN_FIRST * 2 ** (_REFRESH["hits"] - 1), REFRESH_COOLDOWN_MAX)
     wait = max(wait, min(int(retry_after or 0), REFRESH_COOLDOWN_MAX))
     _REFRESH["until"] = now + wait
+    try:
+        COOLDOWN_PATH.write_text(json.dumps({"until": _REFRESH["until"], "hits": _REFRESH["hits"]}),
+                                 encoding="utf-8")
+    except OSError:
+        pass  # the wait still holds while the app stays open
     return wait
 
 
 def _clear_refresh_cooldown():
-    _REFRESH.update(until=0.0, hits=0)
+    _REFRESH.update(until=0.0, hits=0, loaded=True)
+    try:
+        COOLDOWN_PATH.unlink()
+    except OSError:
+        pass
 
 
 def _cooldown_error(seconds):
@@ -91,10 +122,12 @@ def refresh_credentials(creds, cfg=None):
     rt = oauth.get("refreshToken")
     if not rt:
         raise UsageError("Sign-in expired. Open Claude Code to sign in again.", "auth")
-    body = json.dumps({"grant_type": "refresh_token", "refresh_token": rt,
-                       "client_id": CLIENT_ID}).encode()
-    headers = {"Content-Type": "application/json",
-               "User-Agent": resolve_user_agent(cfg or {})}
+    fields = {"grant_type": "refresh_token", "refresh_token": rt, "client_id": CLIENT_ID}
+    scopes = oauth.get("scopes")
+    if isinstance(scopes, list) and scopes:
+        fields["scope"] = " ".join(str(s) for s in scopes)  # as Claude Code sends it
+    body = json.dumps(fields).encode()
+    headers = {"Content-Type": "application/json", "User-Agent": TOKEN_UA}
     result = None
     last_code = None
     last_retry = None
@@ -123,14 +156,19 @@ def refresh_credentials(creds, cfg=None):
             raise _cooldown_error(_start_refresh_cooldown(last_retry))
         raise UsageError(f"Token refresh failed ({last_code}). Open Claude Code to refresh it.", "auth")
     _clear_refresh_cooldown()
-    oauth["accessToken"] = result["access_token"]
-    if result.get("refresh_token"):
-        oauth["refreshToken"] = result["refresh_token"]
-    oauth["expiresAt"] = int(time.time() * 1000 + int(result.get("expires_in", 3600)) * 1000)
     latest = read_credentials() or creds
     if latest.get("claudeAiOauth", {}).get("refreshToken") != rt:
         return latest
-    updated = dict(creds)
+    # Build on the newest copy of the file, so nothing else saved in it is lost.
+    oauth = dict(latest.get("claudeAiOauth", {}))
+    now_ms = time.time() * 1000
+    oauth["accessToken"] = result["access_token"]
+    if result.get("refresh_token"):
+        oauth["refreshToken"] = result["refresh_token"]
+    oauth["expiresAt"] = int(now_ms + int(result.get("expires_in", 3600)) * 1000)
+    if result.get("refresh_token_expires_in"):
+        oauth["refreshTokenExpiresAt"] = int(now_ms + int(result["refresh_token_expires_in"]) * 1000)
+    updated = dict(latest)
     updated["claudeAiOauth"] = oauth
     path = _creds_path()
     tmp = path.with_name(path.name + ".tmp")

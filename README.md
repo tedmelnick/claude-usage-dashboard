@@ -119,6 +119,7 @@ Close the dashboard before editing, because closing it re-saves the settings.
 - The dashboard talks to Anthropic's own usage endpoint (`api.anthropic.com`), Anthropic's token endpoint if you turn on `auto_refresh_token`, and GitHub (`api.github.com`, `github.com`) to look for and download updates. The GitHub requests carry only the app name and version and no personal data. Turn the automatic check off with `check_for_updates`. Nothing else is sent anywhere.
 - Update now downloads the release's source zip from `github.com`, refuses anything that isn't from GitHub or doesn't look like this app, and only ever writes inside the app's own folder. It trusts whatever is in the repository's published releases, the same as downloading one by hand.
 - It reads Claude Code's `~/.claude/.credentials.json` and local logs on your PC. Never post that file anywhere.
+- After a rate-limited sign-in renewal, `refresh_cooldown.json` records only how long to wait. It holds no sign-in data.
 - `usage_history.db` holds only percentages and reset times. Project names shown in "Top projects" come from your local Claude Code logs and are never sent anywhere.
 - To find your Claude Code version for the user agent, it runs `claude --version` on your PC.
 

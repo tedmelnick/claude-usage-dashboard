@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.4
+Fixes
+- Changed how the dashboard renews Claude Code's sign-in (only with `auto_refresh_token` on), to stop the "rate limited (429)" error: the request now includes the sign-in's scopes, as Claude Code's does, and names this app in its User-Agent.
+- The wait after a 429 is now remembered when the dashboard is restarted or updated.
+- Other entries in Claude Code's sign-in file are kept as they are at the moment of saving.
+
 ## 2.4.3
 Fixes
 - Fixed "Token refresh rate limited (429)" showing again and again. After a 429 the dashboard now stops asking for the new sign-in for 5 minutes, then 10, 20, 40 and at most an hour, instead of trying every few minutes. A longer wait requested by Anthropic is respected.

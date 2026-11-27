@@ -116,7 +116,7 @@ def test_missing_sign_in(monkeypatch):
     assert e.value.kind == "auth"
 
 
-def test_refresh_sends_user_agent_and_falls_back_to_second_endpoint(monkeypatch, tmp_path):
+def test_refresh_names_the_app_and_falls_back_to_second_endpoint(monkeypatch, tmp_path):
     creds = {"claudeAiOauth": {"accessToken": "old", "refreshToken": "rt", "expiresAt": 0}}
     monkeypatch.setattr(api, "read_credentials", lambda: creds)
     monkeypatch.setattr(api, "resolve_user_agent", lambda cfg: "claude-code/test")
@@ -142,7 +142,7 @@ def test_refresh_sends_user_agent_and_falls_back_to_second_endpoint(monkeypatch,
     out = api.refresh_credentials(creds, {})
     assert out["claudeAiOauth"]["accessToken"] == "new"
     assert [u for u, _ in seen] == list(api.TOKEN_URLS)
-    assert all(ua == "claude-code/test" for _, ua in seen)
+    assert all(ua == api.TOKEN_UA for _, ua in seen)
 
 
 def test_refresh_failure_reports_status(monkeypatch):
@@ -239,3 +239,76 @@ def test_successful_refresh_clears_the_cooldown(monkeypatch, tmp_path, fresh_coo
     monkeypatch.setattr(api.urllib.request, "urlopen", lambda *a, **k: Reply())
     api.refresh_credentials(creds, {})
     assert api.refresh_cooldown_left() == 0
+
+
+def _token_reply(monkeypatch, payload, seen):
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps(payload).encode()
+
+    def ok(req, timeout=0):
+        seen.append(json.loads(req.data))
+        return Reply()
+    monkeypatch.setattr(api.urllib.request, "urlopen", ok)
+
+
+def test_refresh_sends_saved_scopes_and_keeps_other_entries(monkeypatch, tmp_path):
+    creds = {"claudeAiOauth": {"refreshToken": "rt", "expiresAt": 0, "scopes": ["a:b", "c:d"],
+                               "subscriptionType": "max"},
+             "mcpOAuth": {"keep": 1}}
+    path = tmp_path / ".credentials.json"
+    monkeypatch.setattr(api, "read_credentials", lambda: creds)
+    monkeypatch.setattr(api, "_creds_path", lambda: path)
+    seen = []
+    _token_reply(monkeypatch, {"access_token": "new", "refresh_token": "rt2", "expires_in": 3600,
+                               "refresh_token_expires_in": 7200}, seen)
+    api.refresh_credentials(creds, {})
+    assert seen[0]["scope"] == "a:b c:d"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["mcpOAuth"] == {"keep": 1}
+    oauth = saved["claudeAiOauth"]
+    assert oauth["subscriptionType"] == "max" and oauth["refreshToken"] == "rt2"
+    assert oauth["refreshTokenExpiresAt"] > oauth["expiresAt"]
+
+
+def test_refresh_without_saved_scopes_sends_none(monkeypatch, tmp_path):
+    creds = {"claudeAiOauth": {"refreshToken": "rt", "expiresAt": 0}}
+    monkeypatch.setattr(api, "read_credentials", lambda: creds)
+    monkeypatch.setattr(api, "_creds_path", lambda: tmp_path / ".credentials.json")
+    seen = []
+    _token_reply(monkeypatch, {"access_token": "new"}, seen)
+    api.refresh_credentials(creds, {})
+    assert "scope" not in seen[0]
+
+
+def _restart():
+    api._REFRESH.update(until=0.0, hits=0, loaded=False)
+
+
+def test_cooldown_survives_a_restart():
+    api._start_refresh_cooldown(None, now=1000)
+    _restart()
+    assert api.refresh_cooldown_left(now=1100) == 200
+    assert api._start_refresh_cooldown(None, now=1400) == 600   # the count carries on
+
+
+def test_saved_cooldown_is_capped_and_bad_files_are_ignored():
+    api.COOLDOWN_PATH.write_text('{"until": 99999999, "hits": 3}', encoding="utf-8")
+    _restart()
+    assert api.refresh_cooldown_left(now=0) == api.REFRESH_COOLDOWN_MAX
+    api.COOLDOWN_PATH.write_text("not json", encoding="utf-8")
+    _restart()
+    assert api.refresh_cooldown_left(now=0) == 0
+
+
+def test_clearing_removes_the_saved_cooldown():
+    api._start_refresh_cooldown(None)
+    assert api.COOLDOWN_PATH.exists()
+    api._clear_refresh_cooldown()
+    assert not api.COOLDOWN_PATH.exists()

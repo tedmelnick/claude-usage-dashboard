@@ -10,4 +10,5 @@ __pycache__/
 _backup_before_update/
 *.update-tmp
 found.json
+refresh_cooldown.json
 *_custom.json
